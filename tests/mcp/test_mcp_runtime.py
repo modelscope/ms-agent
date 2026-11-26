@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+if sys.version_info < (3, 11):
+    from exceptiongroup import ExceptionGroup
 
 from ms_agent.config.mcp_schema import ResolvedMCPConfig
 from ms_agent.llm.utils import Tool
@@ -433,6 +437,18 @@ async def test_record_success_resets_transient_counter():
     await runtime.record_success('fetch')
     assert runtime.get_server('fetch').consecutive_failures == 0
     assert runtime.get_server('fetch').status == 'connected'
+
+
+@pytest.mark.parametrize('error_type', [TimeoutError, asyncio.TimeoutError])
+def test_timeout_types_keep_their_diagnostic_and_failure_kind(error_type):
+    from ms_agent.mcp.runtime import short_connect_reason
+    from ms_agent.tools.mcp_client import safe_mcp_error
+
+    error = error_type()
+    assert classify_mcp_failure(error) == 'transient'
+    assert is_connection_error(error)
+    assert short_connect_reason(error, .05) == '0.05秒内没有连上'
+    assert safe_mcp_error(error) == 'MCP startup timed out.'
 
 
 def test_classify_mcp_failure():

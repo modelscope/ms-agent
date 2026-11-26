@@ -6,10 +6,11 @@
 
 | 现象 | 检查与处理 |
 | --- | --- |
-| 找不到ms-agent | 激活安装时的Python环境，检查python/pip所在环境 |
-| 找不到Node/pnpm | 新终端加载nvm，确认Node 22.22.0+及pnpm 10.17.1 |
-| 首次启动很慢 | 查看后端依赖/前端构建进度；不要用未就绪页面判断失败 |
-| 页面或CSS缺失 | 使用正常 `ms-agent ui` / `pnpm build` 流程，不绕过样式构建 |
+| 找不到 `ms-agent` | 激活安装时使用的 Python 环境，检查 Python 和 pip 是否来自同一环境 |
+| 找不到 Node / pnpm | 在新终端加载 nvm，确认 Node 22.22.0+ 和 pnpm 10.17.1 可用 |
+| 缺少 WebUI 的 Python 依赖 | PyPI 用户在当前环境执行 `python -m pip install -U "ms-agent[webui]"`；源码安装会在运行 `ms-agent ui` 时通过 uv 准备后端 |
+| 首次启动很慢 | PyPI 安装需下载 Node 依赖；源码安装还需准备后端环境并构建前端，请等待终端显示访问地址 |
+| 页面或 CSS 缺失 | PyPI 安装若提示包内资源无效，请重新安装对应版本；源码安装可运行 `ms-agent ui`，或在 `webui/frontend/` 执行 `pnpm build` 重新构建 |
 | 端口被占用 | 选择空闲端口，不随意终止其他进程 |
 
 ## 模型与流式回复

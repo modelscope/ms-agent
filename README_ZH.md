@@ -2,7 +2,7 @@
 
 <p align="center">
     <br>
-    <img src="asset/logo.png" width="420" alt="MS-Agent"/>
+    <img src="https://raw.githubusercontent.com/modelscope/ms-agent/release/1.7/asset/logo.png" width="420" alt="MS-Agent"/>
     <br>
 </p>
 
@@ -28,7 +28,7 @@
 </p>
 
 
-[**English**](README.md)
+[**English**](https://github.com/modelscope/ms-agent/blob/release/1.7/README.md)
 
 <a id="简介"></a>
 
@@ -49,7 +49,7 @@
 
 | Discord | 微信群 |
 | :---: | :---: |
-| <img src="asset/discord_qr.jpg" width="200" alt="Discord 社区二维码"> | <img src="asset/ms-agent.jpg" width="200" alt="微信群二维码"> |
+| <img src="https://raw.githubusercontent.com/modelscope/ms-agent/release/1.7/asset/discord_qr.jpg" width="200" alt="Discord 社区二维码"> | <img src="https://raw.githubusercontent.com/modelscope/ms-agent/release/1.7/asset/ms-agent.jpg" width="200" alt="微信群二维码"> |
 
 </details>
 
@@ -57,15 +57,22 @@
 
 ## 🎉 新闻
 
+- 🚀 **2026年11月26日：发布 MS-Agent v1.7.0 —— 全面升级多端工作台与可定制 Agent Harness，让复杂长程任务更可控、更易扩展。** 现已同步发布 [PyPI 安装包](https://pypi.org/project/ms-agent/1.7.0/) 与 Docker 镜像，也可在 [魔搭 Agent 实验场](https://www.modelscope.cn/agents/playground) 在线体验（[Release Notes](https://github.com/modelscope/ms-agent/releases/tag/v1.7.0)）：
+  - **全新 WebUI 工作台与终端 TUI**：重构浏览器工作台（`ms-agent ui`）并推出默认终端界面（`ms-agent`），与 SDK 共享统一运行时底座，围绕本地项目支持全过程任务观测、运行中动态干预与交互决策、多路径会话分支探索及工作区文件协同。[WebUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md)
+  - **面向长程任务的多层上下文与记忆架构**：将完整会话历史、模型活跃上下文与跨会话长期记忆解耦治理，支持可组合的上下文裁剪与自动/手动压缩策略、多后端可插拔的统一记忆体系（涵盖本地文件及 ReMe、mem0 等生态适配），并原生兼容 `AGENTS.md` 等主流工作区指令与提示词模板体系，保障复杂长链路任务稳定演进与断点续接。[上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆架构](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md)
+  - **精细化执行控制与生产级安全加固**：在执行控制侧引入可编程生命周期 Hooks、执行过程反馈与 Cron 周期调度，支持精细定制智能体行为边界与自动化节奏；落地分层权限审批、受管凭据静态加密、WebUI 可选单用户认证及 MCP 服务故障隔离，全面提升本地与远程部署的可靠性。[权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [凭据安全](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md)
+  - **技能全生命周期治理与评测驱动进化**：优化 Skills 安装与维护体验，提供更新前差异审查与版本回溯，让技能成为可审计的工程资产；支持 **Skill Evolution** 工作流，基于执行轨迹、自动评测与反思反馈迭代修订技能，并在验证集上对比筛选有效演进。[技能管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
+  - **开放协议与跨框架生态互通**：原生兼容 Claude Code、Codex、OpenClaw 等主流社区插件格式，支持通过 **Agent Hub** 功能实现跨框架的指令、技能与记忆迁移同步，打通 **ACP** 编辑器与客户端接入以及 **A2A** 远端智能体协同。[插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md)
+
 * 🚀 2026年7月13日：支持 **Agent Hub** —— 通过 `ms-agent agent` 命令在本地与远端 ModelScope 仓库之间管理 agent 工作区文件：上传/下载、后台同步（`watch`）、跨框架转换、状态查看、备份与恢复，覆盖 `qoder`、`qwenpaw`、`openclaw`、`hermes`、`nanobot`、`openhuman` 与 `ms-agent`。
 
-- 🏆 **2026年4月9日**：Agentic Insight v2 在 [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) 上位列**开源方案 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](projects/deep_research/v2/README.md)。
+- 🏆 **2026年4月9日**：Agentic Insight v2 在 [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) 上位列**开源方案 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/v2/README.md)。
 
 - 🚀 **2026年3月23日：发布 MS-Agent v1.6.0，主要更新内容如下：**
   - **上下文压缩**：新增上下文压缩机制，支持 Token 用量监控与溢出检测，通过裁剪历史工具输出和 LLM 摘要自动压缩对话上下文。
   - **Agentic Insight v2 增强**：深度研究系统架构与性能大幅优化，基于 GPT5、Qwen3.5-plus/flash 模型组合在 DeepResearch Bench 上的评分达到 **55.43** 分。详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)。
-  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[配置文档](docs/zh/Components/config.md)。
-  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态文档](docs/zh/Components/multimodal-support.md)。
+  - **知识库搜索**：集成 Sirchmunk 智能检索，支持在 Agent 对话中自动检索本地代码库与文档，详情请参考[检索说明](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/retrieval.md)。
+  - **多模态模型输入**：支持图片、视频等多模态输入，详情请参考[多模态说明](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/multimodal.md)。
 
 * 🚀 **2026年2月6日：发布 MS-Agent v1.6.0rc1，主要更新内容如下：**
   - **Agentic Insight v2**：完整重构的深度研究系统，性能更优、可扩展性更强、可信度更高，提供了 WebUI 入口，详情请参考 [Agentic Insight v2](https://github.com/modelscope/ms-agent/tree/main/projects/deep_research/v2)
@@ -78,44 +85,44 @@
 
 <details><summary>2025 及更早</summary>
 
-* 🎬 2025.11.13: 发布了“奇点放映室”，用于进行知识类文档的复杂场景短视频制作，具体查看[这里](projects/singularity_cinema/README.md)
+* 🎬 2025.11.13: 发布了“奇点放映室”，用于进行知识类文档的复杂场景短视频制作，具体查看[这里](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/singularity_cinema/README.md)
 
 * 🚀 2025.11.12：发布MS-Agent v1.5.0，包含以下更新：
-  - 🔥 新增 [**FinResearch**](projects/fin_research/README.md)，支持金融领域的深度研究和分析
+  - 🔥 新增 [**FinResearch**](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/fin_research/README.md)，支持金融领域的深度研究和分析
   - 支持基于[Akshare](https://github.com/akfamily/akshare)和[Baostock](http://baostock.com/mainContent?file=home.md)的金融数据获取工具
   - 支持以Dag形式编排工作流
   - 优化DeepResearch稳定性与效率
-  - 官方文档： [金融深度研究](https://ms-agent.readthedocs.io/zh-cn/latest/Projects/fin-research.html)
+  - 官方文档： [金融深度研究](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/applications/fin-research.md)
   - 魔搭创空间DEMO: [FinResearchStudio](https://modelscope.cn/studios/ms-agent/FinResearch)
   - 报告样例: [FinResearchExamples](https://www.modelscope.cn/models/ms-agent/fin_research_examples)
 
 * 🚀 2025.11.07：发布MS-Agent v1.4.0，包含以下更新：
-  - 🔥 新增 [**MS-Agent Skills**](docs/zh/Components/agent-skills.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
+  - 🔥 新增 [**MS-Agent Skills**](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/skills.md), 基于 [**Anthropic-Agent-Skills**](https://docs.claude.com/en/docs/agents-and-tools/agent-skills) 协议实现.
   - 🔥 新增 [中文文档](https://ms-agent.readthedocs.io/zh-cn)和[英文文档](https://ms-agent-en.readthedocs.io/en)
   - 🔥 支持沙箱框架 [ms-enclave](https://github.com/modelscope/ms-enclave)
 
 * 🚀 2025.9.22：发布MS-Agent v1.3.0，包含以下更新：
-  - 🔥 支持[Code Scratch](projects/code_genesis/README.md)
+  - 🔥 支持[Code Scratch](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/code_genesis/README.md)
   - 支持`Memory`用于构建具有长期和短期记忆的智能体
   - 增强DeepResearch工作流
   - 支持RAY加速文档信息提取
   - 支持LLMs的Anthropic API格式
 
 * 🚀 2025.8.28：发布MS-Agent v1.2.0，包含以下更新：
-  - DocResearch现在支持推送到`ModelScope`、`HuggingFace`、`GitHub`以便于分享研究报告。详情请参考[Doc Research](projects/doc_research/README.md)。
-  - DocResearch现在支持将Markdown报告导出为`HTML`、`PDF`、`PPTX`和`DOCX`格式，详情请参考[Doc Research](projects/doc_research/README.md)。
-  - DocResearch现在支持`TXT`文件处理和文件预处理，详情请参考[Doc Research](projects/doc_research/README.md)。
+  - DocResearch现在支持推送到`ModelScope`、`HuggingFace`、`GitHub`以便于分享研究报告。详情请参考[Doc Research](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/doc_research/README.md)。
+  - DocResearch现在支持将Markdown报告导出为`HTML`、`PDF`、`PPTX`和`DOCX`格式，详情请参考[Doc Research](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/doc_research/README.md)。
+  - DocResearch现在支持`TXT`文件处理和文件预处理，详情请参考[Doc Research](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/doc_research/README.md)。
 
 
 * 🚀 2025.7.31：发布MS-Agent v1.1.0，包含以下更新：
-- 🔥 支持[文档研究](projects/doc_research/README.md)，演示：[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch) - 为智能洞察（DeepResearch）添加`通用网络搜索引擎`
+- 🔥 支持[文档研究](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/doc_research/README.md)，演示：[DocResearchStudio](https://modelscope.cn/studios/ms-agent/DocResearch) - 为智能洞察（DeepResearch）添加`通用网络搜索引擎`
   - 为Agent与MCP聊天添加`最大连续运行次数`。
 
-* 🚀 2025.7.18：发布MS-Agent v1.0.0，改进Agent与MCP聊天的体验，并更新[智能洞察](projects/deep_research/README.md)的说明文档。
+* 🚀 2025.7.18：发布MS-Agent v1.0.0，改进Agent与MCP聊天的体验，并更新[智能洞察](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/README.md)的说明文档。
 
 * 🚀 2025.7.16：发布MS-Agent v1.0.0rc0，包含以下更新：
   - 支持Agent与MCP（模型上下文协议）聊天
-  - 支持深度研究（智能洞察），参考：[报告演示](projects/deep_research/examples/task_20250617a/report.md)，[脚本演示](projects/deep_research/run.py)
+  - 支持深度研究（智能洞察），参考：[报告演示](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/examples/task_20250617a/report.md)，[脚本演示](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/run.py)
   - 支持[MCP-Playground](https://modelscope.cn/mcp/playground)
   - 为Agent聊天添加回调机制
 
@@ -152,35 +159,47 @@
 
 ## ✨ 核心特性
 
+<a id="统一内核的多端交互工作台"></a>
+
+### 🖥️ 统一内核的多端交互工作台
+
+以共享 Python SDK 为统一执行底座，无缝驱动 **WebUI 浏览器工作台（`ms-agent ui`）、原生终端 TUI（`ms-agent`）、CLI 与业务系统嵌入调用**。面向真实项目场景提供透明的执行过程观测、运行中排队与动态插话、结构化交互决策、任意历史节点的会话分支探索以及同屏文件编辑与预览，并内置多厂商模型能力元数据，开箱即可自动对齐上下文预算、思考档位与视觉能力。[WebUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md)
+
 <a id="可定制的-agent-harness"></a>
 
-### 🧩 可定制的 Agent Harness
+### 🧩 可定制 Harness 与生产安全底座
 
-将工具执行、权限确认与过程反馈组织成可扩展的运行机制。通过**生命周期回调与 Hooks** 接入业务规则、计划检查和结果验证，让开发者能够定制智能体如何行动、何时接受人工干预，以及怎样利用执行反馈继续工作。
+**可扩展的执行编排与定制**：将工具调用、计划检查与过程反馈组织为高度可定制的运行时架构，通过**生命周期回调与命令型 Hooks** 灵活注入业务规则、审查或改写调用参数并驱动反馈闭环，结合周期任务调度支撑研究、巡检与持续维护工作。
+
+**生产级安全边界与容错加固**：通过**规则级安全护栏与分层权限审批体系**明确自动执行与人工确认边界，配合**受管凭据静态加密**、**WebUI 可选单用户登录认证**以及 **MCP 启动故障隔离机制**，保障本地项目与远程部署的安全可控。[权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [凭据安全](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md)
 
 <a id="面向长任务的上下文与记忆"></a>
 
 ### 🧠 面向长任务的上下文与记忆
 
-将**会话历史、当前上下文与项目记忆**分层管理：保留完整记录，按需裁剪工具输出、压缩历史内容，并在后续任务中利用项目记忆。配合 Cron 的定时、周期与单次任务调度，支持需要反复推进的研究、巡检和维护工作。
+将**完整会话历史、模型活跃上下文与跨任务项目记忆**三层解耦治理：会话日志完整留痕并支持断点恢复，上下文层支持可组合的工具输出裁剪与自动/手动压缩策略，记忆层提供统一协议与可插拔后端（覆盖本地文件存储及 ReMe、mem0 等生态适配），同时原生兼容 `SOUL.md`、`AGENTS.md`、`PROFILE.md` 等工作区指令与提示词模板，让长周期任务持续保持连贯性与可追溯性。[上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md) · [工作区个性化](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/personalization.md)
 
 <a id="自主协作与显式工作流编排"></a>
 
 ### 🤝 自主协作与显式工作流编排
 
-开放式任务可以由主智能体动态委派给专用子智能体；阶段和依赖明确的任务，则可使用**链式或 DAG 工作流**编排。为不同角色选择模型、工具与技能，从自主探索到分步交付，按任务需要组织协作。
+开放式复杂任务可由主智能体动态委派给拥有独立上下文的专用子智能体；阶段与依赖清晰的生产流程，则可通过工作流显式编排。支持为不同角色按需组合模型、工具与技能，实现从自主探索到分步交付的无缝衔接。[子智能体](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/subagents.md) · [工作流](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/workflows.md)
 
 <a id="可复用可评测的-agent-skills"></a>
 
-### 📈 可复用、可评测的 Agent Skills
+### 📈 可治理、可评测进化的 Agent Skills
 
-将领域知识与操作方法组织为按需加载的技能，供不同任务复用。独立的 **Skill Evolution** 工作流进一步利用执行轨迹和评测反馈修订技能，通过验证集筛选更新，为经验积累与能力改进提供可检验的依据。
+将领域知识与标准作业流程封装为**按需渐进加载的 Agent Skills**，跨任务高效复用。支持从 GitHub / ModelScope 链接直接安装与升级，提供更新前文件 Diff 审查与一键版本回溯，让技能成为可审计的团队工程资产。[安装与更新](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md)
+
+**Skill Evolution** 工作流进一步基于执行轨迹与评测反馈自动提炼修订方案，在验证集上对候选技能进行系统性对比评估并保留历史版本与得分，让经验沉淀与能力演进有据可循。[工作流说明](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
 
 <a id="开放生态与跨框架资产复用"></a>
 
-### 🔌 开放生态与跨框架资产复用
+### 🔌 开放协议与跨框架生态互通
 
-接入多家模型服务，通过 MCP 连接外部工具，通过 ACP / A2A 对接编辑器与其他智能体，并利用插件组合扩展能力。**Agent Hub** 支持跨框架转换、合并和同步指令、技能与记忆，让已有积累可以随工作环境迁移；应用也可作为 MCP 服务供外部智能体调用。
+支持接入主流模型服务，构建无生态锁定的开放互操作层：通过 **ACP（Agent Client Protocol）** 实现与主流代码编辑器及交互客户端的双向接入与会话代理；通过 **A2A（Agent-to-Agent）** 支持跨服务远端智能体的能力发现与任务协同。
+
+原生兼容 **Claude Code、Codex、OpenClaw** 等社区插件格式中的技能、命令、Agent 定义、Hooks 与 MCP 配置，并通过 **Agent Hub（`ms-agent agent`）** 实现指令、技能与记忆在 **MS-Agent、QwenPaw、OpenClaw、Hermes** 等框架间的转换、脱敏同步与备份恢复。[插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md)
 
 <a id="从框架能力到专业应用"></a>
 
@@ -192,16 +211,16 @@
 
 ## 🚀 安装
 
-选择适合你的入口。推荐先从 **WebUI** 体验项目、会话与工具协作；也可以直接使用终端界面，或将 SDK 集成到 Python 应用中。
+可从 [PyPI](https://pypi.org/project/ms-agent/)、[Docker 镜像](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker) 或[源码](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#source-install)安装，也可零门槛在线体验。按你的使用方式选择最短路径：
 
-| 使用入口 | 适合的场景 |
-| --- | --- |
-| 🖥️ **[WebUI](#webui)** | 在浏览器中处理本地项目、查看执行过程与成果 |
-| ⌨️ **[TUI](#终端与-sdk)** | 在终端持续对话、管理和恢复会话 |
-| 🛠️ **[CLI](#终端与-sdk)** | 执行单次任务，或与脚本配合使用 |
-| 🐍 **[Python SDK](#终端与-sdk)** | 自定义智能体并集成到应用 |
+| 使用入口 | 适合的场景 | 最快上手命令 / 链接 |
+| :--- | :--- | :--- |
+| ☁️ **[Agent 实验场](https://www.modelscope.cn/agents/playground)** | 零安装、在魔搭社区直接体验 MS-Agent 能力 | [立即体验 modelscope.cn/agents/playground](https://www.modelscope.cn/agents/playground) |
+| 🖥️ **[WebUI](#webui)** | 浏览器本地项目工作台，实时查看执行过程、编辑文件（Python 3.12+、Node 22.22.0+、pnpm） | `python -m pip install -U "ms-agent[webui]"` → `ms-agent ui` |
+| ⌨️ **[TUI / CLI / SDK](#终端与-sdk)** | 终端持续协作、脚本自动化或嵌入 Python 应用（Python 3.10+） | `python -m pip install -U ms-agent` → `ms-agent` |
+| 🐳 **[Docker 镜像](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker)** | 宿主机零 Python / Node 环境，一键启动工作台 | `docker run ... ms-agent:1.7.0`（见[部署指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker)） |
 
-项目支持使用默认的 ModelScope 服务商，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key。
+项目默认支持 ModelScope 推理服务，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key；以下本地安装步骤均以 PyPI 为例。
 
 <a id="webui"></a>
 
@@ -214,52 +233,52 @@ MS-Agent WebUI 是面向本地项目的智能体工作台。你可以在浏览�
 https://github.com/user-attachments/assets/43b3c1cc-555a-4184-b1dd-66e0a21e7a12
 
 > [!IMPORTANT]
-> **新版 WebUI 请优先从源码安装。** 需要 Git、**Python 3.12+**、**Node.js 22.22.0+**、**pnpm 10.17.1** 和 **uv 0.5+**。
+> WebUI 需要 **Python 3.12+**、**Node.js 22.22.0+** 和 **pnpm 10.17.1**。
 
-首次配置环境，请先完成 [环境准备](webui/README_ZH.md#首次配置)。已有 Python 和 Node.js 时，用 `python3 --version`、`node --version` 确认版本；如果尚未创建 Python 环境，可在准备存放项目的目录执行：
+先用 `python3 --version` 和 `node --version` 确认版本，环境安装方法见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#准备-python-环境)。确认 Python 为 3.12+ 后，创建并激活虚拟环境；已有环境可直接激活：
 
 ```bash
 python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
 ```
 
-创建前请确认 `python3` 为 3.12+。已有虚拟环境或 Conda 环境的用户直接激活即可。然后在同一终端中安装并启动：
+在同一终端中安装并启动：
 
 ```bash
 npm install --global pnpm@10.17.1
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-pip install uv
-pip install -e .
+python -m pip install -U "ms-agent[webui]"
 ms-agent ui
 ```
 
-首次启动会通过 uv 准备后端环境、安装前端依赖并构建页面和样式，需要保持网络连接。就绪后浏览器会打开终端显示的地址，通常是 **http://127.0.0.1:8000**。在 **设置 → 模型设置** 选择服务商，点击 **编辑** 保存 API Key，再通过 **添加模型** 填写模型 ID。返回对话页，在输入框下方选中该模型即可开始使用。按 Ctrl-C 停止服务。
+安装包已包含构建好的前端，首次启动仍需联网下载 Node 依赖并存入本地缓存。准备完成后，浏览器会打开终端显示的地址，通常是 **http://127.0.0.1:8000**；如果该端口被占用，会自动选择其他端口。在启动终端按 Ctrl-C 可停止服务。
+
+然后配置模型，并发送第一条消息：
+
+1. 打开 **设置 → 模型设置**，选择服务商，点击 **编辑** 填写 API Key 并保存。ModelScope 的 Key 可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取。若服务商未列出，先按[模型设置指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/model-settings.md)添加。
+2. 在该服务商下点击 **添加模型**，填写其支持的模型 ID，例如 ModelScope 的 `Qwen/Qwen3.8-Flash-Next`。保存 Key 不会自动添加或选中模型。
+3. 回到对话页，在输入框下方选中模型，权限模式保持为 **总是询问**，发送一句简短请求，例如：“用两句话介绍你能怎样帮助我。”
+
+密钥和会话默认保存在本机的 `~/.ms_agent` 目录。不要提交 `.env` 文件，也不要在聊天内容或截图中暴露 API Key。
+
+后续操作见 [WebUI 教程](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md)；若请求失败，见[故障排查](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/troubleshooting.md)。
 
 ```bash
 ms-agent ui --port 8080    # 指定访问端口
 ms-agent ui --no-browser  # 不自动打开浏览器
 ```
 
-虚拟环境准备、开发、Docker 和配置说明见 [WebUI 完整指南](webui/README_ZH.md)。
+更多安装方式与开发说明见 [WebUI 说明](https://github.com/modelscope/ms-agent/blob/release/1.7/webui/README_ZH.md)。
 
 <a id="终端与-sdk"></a>
 
 ### ⌨️ 终端与 SDK
 
-TUI、CLI 和 Python SDK 需要 **Python 3.10+**，无需安装 Node.js 或 pnpm。还没有合适的 Python 时，可用 [uv 准备 Python 环境](webui/README_ZH.md#安装-python)。已有 Python 时，先用 `python3 --version` 确认版本，再创建并激活环境：
+TUI、CLI 和 Python SDK 需要 **Python 3.10+**，无需安装 Node.js 或 pnpm。若已安装 WebUI，直接复用其 Python 环境并配置下方的 API Key。否则，先创建或激活 Python 环境，再从 PyPI 安装；环境准备见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#准备-python-环境)：
 
 ```bash
 python3 -m venv ms-agent-env
 source ms-agent-env/bin/activate
-```
-
-已有虚拟环境或 Conda 环境的用户直接激活即可。已完成 WebUI 安装的用户，可跳过环境创建和源码安装，直接在同一环境中配置 API Key。其余用户继续执行：
-
-```bash
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-pip install -e .
+python -m pip install -U ms-agent
 ```
 
 以下示例默认使用 ModelScope 推理服务，在运行命令或 Python 程序的终端中设置：
@@ -308,39 +327,30 @@ asyncio.run(main())
 ```
 
 <details>
-<summary>可选依赖与已发布版本</summary>
+<summary>可选依赖</summary>
 
-在源码仓库根目录、已激活的 Python 环境中，可以按需安装扩展依赖：
+在同一 Python 环境中按需安装扩展依赖：
 
-```bash
-# 向量 / 混合技能检索
-pip install -e '.[retrieval]'
+| 功能 | 命令 |
+| --- | --- |
+| 向量 / 混合技能检索 | `python -m pip install -U "ms-agent[retrieval]"` |
+| 深度研究 / 文档解析 | `python -m pip install -U "ms-agent[research]"` |
+| 视频生成 | `python -m pip install -U "ms-agent[cinema]"` |
+| 全部运行时扩展，含 WebUI（Python 3.12+） | `python -m pip install -U "ms-agent[all]"` |
 
-# 深度研究 / 文档解析
-pip install -e '.[research]'
-
-# 视频生成
-pip install -e '.[cinema]'
-
-# 全部运行时扩展（包含 WebUI，需 Python 3.12+）
-pip install -e '.[all]'
-```
-
-完整列表见[安装指南](docs/zh/GetStarted/installation.md#可选依赖extras)。这些命令中的引号需要保留，避免 macOS 默认的 zsh 将方括号作为文件匹配表达式。
-
-[PyPI 已发布版本](https://pypi.org/project/ms-agent/)目前为 1.6.0，使用旧版 WebUI 和依赖组合，不包含当前源码的 TUI，也没有 `retrieval`、`cinema` extras。新环境请使用上面的源码安装；版本差异与已知安装问题见安装指南。
+完整列表见[快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#按需增加依赖)。
 
 </details>
 
-重新打开终端后，需要再次激活 Python 环境。WebUI 用户运行 `ms-agent ui` 即可；终端与 SDK 用户还需重新设置 API Key，或按配置文档将其保存在 `.env` 文件中。
+重新打开终端后，需要再次激活 Python 环境。WebUI 用户运行 `ms-agent ui` 即可。终端与 SDK 用户还需重新设置 API Key，或将其保存在本地 `.env` 文件中（不要提交该文件）。详见[配置参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/configuration-reference.md)。
 
 <a id="配置与扩展"></a>
 
 ### ⚙️ 配置与扩展
 
-完成首次对话后，可以按需更换模型、接入 MCP 工具或加载技能。WebUI 可在设置中管理这些配置；终端与 SDK 的用法见[模型与配置参考](docs/zh/Components/config.md)、[工具与 MCP](docs/zh/Components/tools.md)和[Agent Skills](docs/zh/Components/agent-skills.md)。也可以在 [MCP Playground](https://modelscope.cn/mcp/playground) 在线体验工具调用。
+完成首次对话后，可以更换模型、接入 MCP 工具或加载技能。WebUI 可在设置中管理这些配置，详见[模型设置](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/model-settings.md)和[技能与 MCP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skills-mcp.md)。终端与 SDK 的用法见[工具](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/tools.md)和[技能](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/skills.md)。也可以在 [MCP Playground](https://modelscope.cn/mcp/playground) 在线体验工具调用。
 
-定时任务 `ms-agent cron`、Agent Hub `ms-agent agent` 及更多命令见 [CLI 参考](docs/zh/GetStarted/cli.md)。
+定时任务 `ms-agent cron`、Agent Hub `ms-agent agent` 及更多命令见 [CLI 参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/cli-reference.md)。
 
 <a id="应用项目"></a>
 
@@ -356,7 +366,7 @@ pip install -e '.[all]'
 
 2026 年 4 月 9 日，Agentic Insight v2 在 **DeepResearch Bench 获得 55.31 分**（Qwen3.5-Plus + GPT 5.2），当时位列开源方案第 2、总榜第 5。
 
-[v2 使用指南](projects/deep_research/v2/README_zh.md) · [报告演示](https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b) · [评测结果](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) · [v1 基础与扩展工作流](projects/deep_research/README_zh.md)
+[v2 使用指南](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/v2/README_zh.md) · [报告演示](https://github.com/user-attachments/assets/b1091dfc-9429-46ad-b7f8-7cbd1cf3209b) · [评测结果](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) · [v1 基础与扩展工作流](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/README_zh.md)
 
 <a id="codegenesis--从自然语言需求到软件项目"></a>
 
@@ -364,7 +374,7 @@ pip install -e '.[all]'
 
 将需求分析、架构设计、文件规划、编码与修正组织为多智能体开发流程。按文件依赖关系安排生成顺序，结合 LSP 诊断与运行反馈迭代代码；提供七阶段标准流程和四阶段简化流程，适配需要详细设计的项目与快速原型。
 
-[设计与使用指南](docs/zh/Projects/code-genesis.md) · [项目源码](projects/code_genesis) · [工作流示意](projects/code_genesis/asset/workflow.jpg)
+[设计与使用指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/applications/code-genesis.md) · [项目源码](https://github.com/modelscope/ms-agent/tree/release/1.7/projects/code_genesis) · [工作流示意](https://raw.githubusercontent.com/modelscope/ms-agent/release/1.7/projects/code_genesis/asset/workflow.jpg)
 
 <a id="finresearch--结合金融数据与市场信息的研究"></a>
 
@@ -372,7 +382,7 @@ pip install -e '.[all]'
 
 由五个专用智能体协作完成任务拆解、数据采集、量化分析、舆情研究与报告汇总。结合 AkShare / BaoStock 的结构化金融数据和互联网公开信息，将数据分析、可视化与定性研究整合为图文报告。
 
-[使用指南](projects/fin_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/FinResearch) · [报告样例](https://www.modelscope.cn/models/ms-agent/fin_research_examples) · [视频演示](https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef)
+[使用指南](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/fin_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/FinResearch) · [报告样例](https://www.modelscope.cn/models/ms-agent/fin_research_examples) · [视频演示](https://github.com/user-attachments/assets/a11db8d2-b559-4118-a2c0-2622d46840ef)
 
 <a id="docresearch--将多份资料整理为图文报告"></a>
 
@@ -380,7 +390,7 @@ pip install -e '.[all]'
 
 面向论文阅读与资料研究，接收多份文档或 URL，提取关键信息并生成包含图表的研究报告。支持 PDF、TXT、PPT、DOCX 等输入，以及 PDF、PPTX、DOCX、HTML 报告导出，便于将研究成果用于阅读、汇报和分享。
 
-[使用指南](projects/doc_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/DocResearch)
+[使用指南](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/doc_research/README_zh.md) · [在线体验](https://modelscope.cn/studios/ms-agent/DocResearch)
 
 <a id="singularity-cinema--奇点放映室"></a>
 
@@ -388,30 +398,41 @@ pip install -e '.[all]'
 
 从主题或纯文本资料出发，编排台本、分镜、配音、画面生成与视频合成，将知识内容转化为短视频。面向科普、技术原理与经济类讲解，可组合图片、字幕和生成视频等素材，定制自己的创作流程。
 
-[使用指南与更多作品](projects/singularity_cinema/README.md) · 点击下方预览观看「如何部署大语言模型」：
+[使用指南与更多作品](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/singularity_cinema/README.md) · 点击下方预览观看「如何部署大语言模型」：
 
-[![奇点放映室作品：如何部署大语言模型](projects/singularity_cinema/show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
+[![奇点放映室作品：如何部署大语言模型](https://raw.githubusercontent.com/modelscope/ms-agent/release/1.7/projects/singularity_cinema/show_case/deploy_llm.png)](http://modelscope.oss-cn-beijing.aliyuncs.com/ms-agent/show_case/video/deploy_llm_claude_sonnet_4_5_mllm_gemini_3_pro_image_gen_gemini_3_pro_image.mp4)
 
 <a id="skill-evolution--用任务反馈改进技能"></a>
 
 ### 🧬 Skill Evolution · 用任务反馈改进技能
 
-面向可自动评测的任务，运行当前技能、收集轨迹与得分，再由反思和技能管理智能体提炼经验、创建或修订技能。候选更新经过验证集筛选，只有表现提升才被接受；内置 SearchQA 基线，便于研究技能如何从任务经验中持续改进。
+面向可自动评测的任务，运行当前技能、收集轨迹与得分，再由反思和技能管理智能体提炼经验、创建或修订技能。工作流在验证集上比较候选技能，最后分别测试初始版本、最终版本和验证表现最佳的版本；内置 SearchQA 基线，便于研究技能如何从任务经验中改进。
 
-[工作流与运行指南](projects/skill_evolution/README_zh.md)
+[工作流与运行指南](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
 
 <a id="文档"></a>
 
 ## 📚 文档
 
-- [用户文档](https://ms-agent.readthedocs.io/zh-cn/latest/)：快速开始、核心组件、能力扩展与配置参考。
-- [贡献指南](docs/zh/Components/contributor-guide.md)：参与框架与应用开发。
+按需直达对应文档（支持在线阅读 **[完整中文文档](https://ms-agent.readthedocs.io/zh-cn/latest/)**）：
+
+| 需求 | 推荐入口 |
+| :--- | :--- |
+| 零门槛在线试用，或在本地完成第一个任务 | [Agent 实验场](https://www.modelscope.cn/agents/playground) · [本地快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md) · [Python SDK](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/python-sdk.md) |
+| 在浏览器或终端中管理项目并掌控长任务过程 | [WebUI 工作台](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 终端](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md) · [项目与会话分支](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/projects-sessions.md) |
+| 治理长任务上下文、统一记忆与工作区个性化 | [上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆架构](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md) · [个性化模板](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/personalization.md) · [定时调度](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/scheduled-tasks.md) |
+| 安装、审查更新或评测进化 Skills | [Skill 安装与更新](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md) · [技能机制](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/skills.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/applications/skill-evolution.md) |
+| 定制执行控制、安全权限与多智能体协作 | [权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [Callbacks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/callbacks.md) · [子智能体](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/subagents.md) · [工作流](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/workflows.md) |
+| 复用社区插件、跨框架同步或对接开放协议 | [插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [MCP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/mcp-client.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md) |
+| 远程部署、凭据加密迁移或排查问题 | [部署与认证](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md) · [密钥保存与恢复](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md) · [故障排查](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/troubleshooting.md) |
+
+[架构总览](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/architecture.md) · [配置参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/configuration-reference.md) · [CLI 参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/cli-reference.md) · [贡献指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/contributing.md)
 
 <a id="许可证"></a>
 
 ## 📄 许可证
 
-本项目采用 [Apache License 2.0](LICENSE)。
+本项目采用 [Apache License 2.0](https://github.com/modelscope/ms-agent/blob/release/1.7/LICENSE)。
 
 <a id="star-历史"></a>
 

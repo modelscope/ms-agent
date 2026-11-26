@@ -26,7 +26,8 @@ from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 from ms_agent.llm import multimodal
 from ms_agent.llm.cost import (merge_usage, normalize_usage, response_usage,
                                set_response_usage, update_openai_usage)
-from ms_agent.llm.io import create_owned_response, interrupt_stream
+from ms_agent.llm.io import (OwnedResponse, create_owned_response,
+                             interrupt_stream)
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.transport.base import Transport
@@ -521,6 +522,7 @@ class OpenAICompatTransport(Transport):
                 # Keep the actual HTTP stream, before the fallback layers wrap
                 # it in generators. Closing a wrapper before its first next()
                 # (or while next() is running) cannot close the connection.
+                result = OwnedResponse(result)
                 self._active_stream = result
             return result
 

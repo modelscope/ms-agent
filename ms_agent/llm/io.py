@@ -3,6 +3,7 @@
 import asyncio
 import contextvars
 import socket
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 # Shared, bounded, and started lazily by ThreadPoolExecutor. Its lifetime is
@@ -17,13 +18,7 @@ async def run_in_llm_executor(func, *args):
         _executor, context.run, func, *args)
 
 
-def interrupt_stream(stream):
-    """Interrupt an owned HTTP/1 response before closing its SDK stream.
-
-    A socket close in another thread need not wake a blocked recv(). Shutdown
-    does. Never shut down an HTTP/2 connection, which may carry other requests.
-    Custom transports without HTTPX's network extension retain normal close.
-    """
+def _shutdown_socket(stream):
     try:
         response = getattr(stream, 'response', None)
         if (response is not None and not response.is_closed
@@ -32,8 +27,77 @@ def interrupt_stream(stream):
             sock = network.get_extra_info('socket') if network else None
             if sock is not None:
                 sock.shutdown(socket.SHUT_RDWR)
-    except Exception:  # shutdown is best effort; always attempt SDK cleanup
+                return True
+    except Exception:
         pass
+    return False
+
+
+class OwnedResponse:
+    """Keep cross-thread interruption separate from a reader's final close."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._iterator = None
+        self._lock = threading.Lock()
+        self._reading = False
+        self._close_requested = False
+        self._closed = False
+
+    @property
+    def response(self):
+        return getattr(self._stream, 'response', None)
+
+    def read(self, function, *args):
+        with self._lock:
+            if self._closed or self._close_requested:
+                raise StopIteration
+            self._reading = True
+        try:
+            return function(*args)
+        finally:
+            with self._lock:
+                self._reading = False
+                close_requested = self._close_requested
+                if close_requested:
+                    self._closed = True
+                    self._close_requested = False
+            if close_requested:
+                self._close_stream()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._iterator is None:
+            self._iterator = iter(self._stream)
+        try:
+            return self.read(next, self._iterator)
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        with self._lock:
+            if self._closed or self._close_requested:
+                return
+            if self._reading and _shutdown_socket(self):
+                # Closing here can race a timed recv() on Darwin even after shutdown.
+                self._close_requested = True
+                return
+            self._closed = True
+        self._close_stream()
+
+    def _close_stream(self):
+        try:
+            self._stream.close()
+        except Exception:
+            pass
+
+
+def interrupt_stream(stream):
+    if not isinstance(stream, OwnedResponse):
+        _shutdown_socket(stream)
     try:
         if stream is not None:
             stream.close()
@@ -67,6 +131,27 @@ class OpenedStream:
         self.__exit__(None, None, None)
 
 
+def create_owned_stream(resource, owner, **kwargs):
+    from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                          request_cancellation)
+
+    with request_cancellation(owner) as cancelled:
+        stream = None
+        try:
+            raise_if_cancelled(cancelled)
+            stream = OwnedResponse(resource.create(**kwargs))
+            raise_if_cancelled(cancelled)
+            owner._active_stream = stream
+            raise_if_cancelled(cancelled)
+            return stream
+        except BaseException:
+            interrupt_stream(stream)
+            if getattr(owner, '_active_stream', None) is stream:
+                owner._active_stream = None
+            raise_if_cancelled(cancelled)
+            raise
+
+
 def create_owned_response(resource, owner, **kwargs):
     """Expose response ownership before synchronous JSON parsing blocks on body I/O.
 
@@ -74,26 +159,30 @@ def create_owned_response(resource, owner, **kwargs):
     stream=false request. Custom resources can keep their ordinary create API.
     """
     import inspect
-    import threading
     from types import SimpleNamespace
+    from ms_agent.utils.llm_utils import (raise_if_cancelled,
+                                          request_cancellation)
 
-    if inspect.getattr_static(resource, 'with_streaming_response',
-                              None) is None:
-        return resource.create(**kwargs)
-    cancelled = threading.Event()
-    owner._request_cancel = cancelled
-    active = None
-    try:
-        with resource.with_streaming_response.create(**kwargs) as raw:
-            active = SimpleNamespace(
-                response=raw.http_response, close=raw.close)
-            owner._active_stream = active
-            if cancelled.is_set():
-                interrupt_stream(active)
-                raise asyncio.CancelledError()
-            return raw.parse()
-    finally:
-        if getattr(owner, '_active_stream', None) is active:
-            owner._active_stream = None
-        if getattr(owner, '_request_cancel', None) is cancelled:
-            owner._request_cancel = None
+    with request_cancellation(owner) as cancelled:
+        active = None
+        try:
+            raise_if_cancelled(cancelled)
+            if inspect.getattr_static(resource, 'with_streaming_response',
+                                      None) is None:
+                result = resource.create(**kwargs)
+            else:
+                with resource.with_streaming_response.create(**kwargs) as raw:
+                    raise_if_cancelled(cancelled)
+                    active = OwnedResponse(SimpleNamespace(
+                        response=raw.http_response, close=raw.close))
+                    owner._active_stream = active
+                    raise_if_cancelled(cancelled)
+                    result = active.read(raw.parse)
+            raise_if_cancelled(cancelled)
+            return result
+        except Exception:
+            raise_if_cancelled(cancelled)
+            raise
+        finally:
+            if getattr(owner, '_active_stream', None) is active:
+                owner._active_stream = None

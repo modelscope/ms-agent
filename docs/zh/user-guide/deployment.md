@@ -16,12 +16,12 @@ WebUI 默认关闭认证，仅供本机使用。开放网络访问前启用下�
 
 ### 可选单用户登录
 
-在启动前设置以下变量，也可保存到私有的 `webui/backend/.env`：
+在启动前设置以下环境变量。源码安装也可从私有的 `webui/backend/.env` 加载；PyPI 安装不会自动读取 `.env` 文件：
 
-```ini
-MS_AGENT_WEBUI_AUTH_ENABLED=true
-MS_AGENT_WEBUI_USERNAME=admin
-MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
+```bash
+export MS_AGENT_WEBUI_AUTH_ENABLED=true
+export MS_AGENT_WEBUI_USERNAME=admin
+export MS_AGENT_WEBUI_PASSWORD='请替换为足够长且不重复使用的密码'
 ```
 
 重启后使用配置的账号登录。每个实例只有一个账号，用户名默认 `admin`；开启认证但未配置密码会拒绝启动。登录状态保留 7 天，重启后仍有效。**设置 → 退出登录** 可退出；修改用户名或密码并重启会使旧登录失效。

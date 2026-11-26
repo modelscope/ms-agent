@@ -293,6 +293,7 @@ def _prepare_installed_kwargs(monkeypatch, trace_env=None):
         monkeypatch.setenv(ui.TRACE_RUNTIME_ENV, trace_env)
 
     captured = {}
+    monkeypatch.setattr(ui.sys, 'version_info', (3, 12, 0))
     monkeypatch.setattr(ui, 'find_webui', lambda: (Path('/webui'), True))
     monkeypatch.setattr(ui, 'load_common', lambda webui: SimpleNamespace())
     monkeypatch.setattr(ui, '_require_executable', lambda name: '/tools/' + name)

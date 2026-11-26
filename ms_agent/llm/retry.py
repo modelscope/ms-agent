@@ -8,11 +8,13 @@ timeout/overloaded -> worth retrying with backoff) from terminal ones
 from __future__ import annotations
 
 import functools
-import time
+from contextlib import nullcontext
 from enum import Enum
 from typing import Callable
 
 from ms_agent.utils import get_logger
+from ms_agent.utils.llm_utils import (raise_if_cancelled, request_cancellation,
+                                      wait_before_retry)
 
 logger = get_logger()
 
@@ -55,40 +57,49 @@ _NON_RETRYABLE = (ErrorCategory.AUTH, ErrorCategory.QUOTA,
 
 def smart_retry(max_attempts: int = 3,
                 base_delay: float = 1.0,
-                max_delay: float = 30.0):
+                max_delay: float = 30.0,
+                cancellation_owner: Callable | None = None):
     """Retry decorator that respects error category and backoff."""
 
     def decorator(func: Callable):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:  # noqa: BLE001 - re-raised below
-                    last_error = e
-                    category = classify_error(e)
-                    if category in _NON_RETRYABLE:
-                        logger.warning(
-                            f'Non-retryable error ({category.value}): {e}')
-                        raise
-                    if attempt < max_attempts - 1:
-                        delay = min(base_delay * (2**attempt), max_delay)
-                        retry_after = getattr(e, 'retry_after', None)
-                        if retry_after:
-                            try:
-                                delay = max(delay, float(retry_after))
-                            except (TypeError, ValueError):
-                                pass
-                        logger.info(f'Retrying in {delay:.1f}s '
-                                    f'(attempt {attempt + 1}/{max_attempts}, '
-                                    f'category={category.value}): {e}')
-                        time.sleep(delay)
-                    else:
-                        logger.error(
-                            f'All {max_attempts} attempts failed: {e}')
-            raise last_error
+            owner = cancellation_owner(args[0]) if cancellation_owner else None
+            scope = (request_cancellation(owner)
+                     if owner is not None else nullcontext())
+            with scope as cancelled:
+                last_error = None
+                for attempt in range(max_attempts):
+                    raise_if_cancelled(cancelled, owner)
+                    try:
+                        result = func(*args, **kwargs)
+                        raise_if_cancelled(cancelled, owner)
+                        return result
+                    except Exception as e:  # noqa: BLE001 - re-raised below
+                        raise_if_cancelled(cancelled, owner)
+                        last_error = e
+                        category = classify_error(e)
+                        if category in _NON_RETRYABLE:
+                            logger.warning(
+                                f'Non-retryable error ({category.value}): {e}')
+                            raise
+                        if attempt < max_attempts - 1:
+                            delay = min(base_delay * (2**attempt), max_delay)
+                            retry_after = getattr(e, 'retry_after', None)
+                            if retry_after:
+                                try:
+                                    delay = max(delay, float(retry_after))
+                                except (TypeError, ValueError):
+                                    pass
+                            logger.info(f'Retrying in {delay:.1f}s '
+                                        f'(attempt {attempt + 1}/{max_attempts}, '
+                                        f'category={category.value}): {e}')
+                            wait_before_retry(delay, cancelled, owner)
+                        else:
+                            logger.error(
+                                f'All {max_attempts} attempts failed: {e}')
+                raise last_error
 
         return wrapper
 

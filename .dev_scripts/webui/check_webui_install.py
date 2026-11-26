@@ -108,6 +108,24 @@ def check_unbuffered_proxy(frontend, env, log_path):
     ports_closed((port, ))
 
 
+def run_preparation(command, cwd, env, log, timeout=600):
+    process = subprocess.Popen(command, cwd=cwd, env=env, stdout=log,
+                               stderr=subprocess.STDOUT)
+    try:
+        code = process.wait(timeout=timeout)
+        if code:
+            raise subprocess.CalledProcessError(code, command)
+    finally:
+        if process.poll() is None:
+            # Let the launcher stop its dependency-install process groups first.
+            process.terminate()
+            try:
+                process.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--logs', type=Path, required=True)
@@ -147,14 +165,7 @@ def main():
             for path in modes:
                 path.chmod(0o555 if path.is_dir() else 0o444)
             with (args.logs / 'installed-prepare.log').open('w') as log:
-                subprocess.run(
-                    command + ['--prepare-only'],
-                    cwd=root,
-                    env=env,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    check=True,
-                    timeout=600)
+                run_preparation(command + ['--prepare-only'], root, env, log)
             stamps = list(
                 (root / 'cache').glob('*/frontend/.node-dependencies.json'))
             assert len(stamps) == 1

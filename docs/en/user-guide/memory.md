@@ -50,11 +50,13 @@ Set new-project defaults in **Settings → Personalization → Memory settings**
 
 **Check memory configuration** checks credentials, endpoints, and model purposes. If valid, it sends small requests to the selected remote embedding service to check the vector dimension; these calls may incur a charge. The project form also runs this check before creating a vector-memory project or saving changed memory model settings. If the check fails, the form does not submit. Local checks can read model metadata; actual first use still needs the model downloaded. Verification neither creates a memory store nor calls the extraction model, so embedding success does not verify the entire memory pipeline. Changing providers or models requires a new check.
 
-Local mode requires the optional dependency in `webui/backend/`:
+Local mode requires `fastembed`. For a PyPI installation, install it in the same Python environment as the WebUI:
 
 ```bash
-uv sync --locked --extra local-embed
+python -m pip install fastembed
 ```
+
+For source installations, run `uv sync --locked --extra local-embed` in `webui/backend/` instead.
 
 Restart the service and allow the first model download to finish. Remote embeddings use the selected provider's saved or environment credentials. An unusable explicit choice reports an error rather than silently selecting another service.
 

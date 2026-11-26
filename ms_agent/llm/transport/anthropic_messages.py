@@ -19,8 +19,8 @@ from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 from ms_agent.llm import multimodal
 from ms_agent.llm.cost import (response_usage, set_response_usage,
                                update_usage_snapshot)
-from ms_agent.llm.io import (OpenedStream, create_owned_response,
-                             interrupt_stream)
+from ms_agent.llm.io import (OpenedStream, OwnedResponse,
+                             create_owned_response, interrupt_stream)
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.transport.base import Transport
@@ -45,7 +45,10 @@ class AnthropicMessagesTransport(Transport):
         provider_id: str = '',
     ):
         self.provider_id = provider_id
-        assert_package_exist('anthropic', 'anthropic')
+        assert_package_exist(
+            'anthropic',
+            "Install the Anthropic integration with "
+            "`pip install 'anthropic>=0.117.0,<1'`.")
         import anthropic
 
         if not api_key:
@@ -427,6 +430,7 @@ class AnthropicMessagesTransport(Transport):
         )
         tool_call_id_map = {}
         with stream_manager as stream:
+            stream = OwnedResponse(stream)
             # Expose the live stream so interrupt() can close it from another
             # thread; the `with` still closes it on every normal/exception exit.
             self._active_stream = stream

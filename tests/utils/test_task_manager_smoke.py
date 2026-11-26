@@ -382,7 +382,7 @@ class TestAgentToolTranscript(unittest.TestCase):
                 {'role': 'assistant', 'content': 'hi'},
             ]
             tool._save_transcript(messages, 'worker-1')
-            path = os.path.join(td, 'subagents', 'worker-1.jsonl')
+            path = os.path.join(td, '.ms_agent', 'subagents', 'worker-1.jsonl')
             self.assertTrue(os.path.isfile(path))
             lines = open(path, encoding='utf-8').read().strip().split('\n')
             self.assertEqual(len(lines), 2)

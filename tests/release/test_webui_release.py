@@ -174,6 +174,48 @@ def test_httpx_requirement_is_not_mistaken_for_a_url(tmp_path):
     assert module.parse_requirements(str(requirements))[0] == ['httpx>=0.28.1']
 
 
+@pytest.mark.parametrize('force_kill', [False, True])
+def test_install_check_terminates_preparation_before_cleanup(monkeypatch, force_kill):
+    from unittest.mock import Mock, call
+    import check_webui_install as install_check
+
+    process = Mock()
+    expired = subprocess.TimeoutExpired(['prepare'], .01)
+    process.wait.side_effect = [expired, expired, 0] if force_kill else [expired, 0]
+    process.poll.return_value = None
+    monkeypatch.setattr(install_check.subprocess, 'Popen', Mock(return_value=process))
+    with pytest.raises(subprocess.TimeoutExpired):
+        install_check.run_preparation(['prepare'], ROOT, {}, None, timeout=.01)
+    process.terminate.assert_called_once_with()
+    assert process.wait.call_args_list == ([call(timeout=.01), call(timeout=20), call(timeout=10)]
+                                           if force_kill else [call(timeout=.01), call(timeout=20)])
+    assert process.kill.call_count == int(force_kill)
+
+
+def test_dependency_key_accepts_reordered_version_bounds():
+    assert check.dependency_key('anthropic>=0.117.0,<2') == check.dependency_key(
+        'anthropic<2,>=0.117.0')
+    assert check.dependency_key('anthropic>=0.117.0,<2') != check.dependency_key(
+        'anthropic>=0.117.0,<3')
+
+
+@pytest.mark.parametrize('filename,name,supported,unsupported', [
+    ('framework.txt', 'mcp', '1.28.1', '2.0.0'),
+    ('webui.txt', 'anthropic', '0.117.0', '1.0.0'),
+])
+def test_requirements_preserve_supported_transport_apis(filename, name, supported, unsupported):
+    from packaging.requirements import Requirement
+
+    spec = importlib.util.spec_from_file_location('sdk_setup', ROOT / 'setup.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    requirements = module.parse_requirements(str(ROOT / 'requirements' / filename))[0]
+    requirement = next(Requirement(value) for value in requirements
+                       if Requirement(value).name == name)
+    assert requirement.specifier.contains(supported)
+    assert not requirement.specifier.contains(unsupported)
+
+
 def test_pypi_retry_uploads_only_missing_identical_release_files():
     release = {
         'files': {

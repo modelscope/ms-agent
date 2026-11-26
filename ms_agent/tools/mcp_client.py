@@ -411,7 +411,8 @@ def safe_mcp_error(exc: BaseException, server: dict | None = None) -> str:
         if code in ('401', '403'):
             return f'HTTP {code}: access denied; check MCP credentials and permissions.'
         return f'HTTP {code}: the remote service or package source rejected the request.'
-    if isinstance(exc, TimeoutError) or re.search(r'timed out|timeout', text):
+    if (isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+            or re.search(r'timed out|timeout', text)):
         return 'MCP startup timed out.'
     if isinstance(exc, FileNotFoundError):
         return 'MCP command or required file not found.'
@@ -707,7 +708,7 @@ class MCPClient(ToolBase):
             reason = self.startup_failures.setdefault(
                 server_name, safe_mcp_error(exc, server_config))
             error_type = TimeoutError if isinstance(
-                exc, TimeoutError) else _MCPStartupError
+                exc, (asyncio.TimeoutError, TimeoutError)) else _MCPStartupError
             raise error_type(reason) from None
 
     async def _open_session(self, stack: AsyncExitStack, server_name: str,
@@ -957,7 +958,7 @@ class MCPClient(ToolBase):
                           else f'{phase}: {safe_mcp_error(exc, kwargs)}')
                 self.startup_failures[server_name] = reason
             await self._stop_server(server_name, graceful=False)
-            if isinstance(exc, TimeoutError):
+            if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
                 raise TimeoutError(self.startup_failures[server_name]) from None
             if isinstance(exc, asyncio.CancelledError):
                 raise

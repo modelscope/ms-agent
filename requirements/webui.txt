@@ -1,4 +1,4 @@
-anthropic>=0.117.0
+anthropic>=0.117.0,<1
 beautifulsoup4
 cryptography>=43.0.0
 exa-py>=2.16.0

@@ -7,7 +7,8 @@ from typing import Any, Dict, Generator, Iterator, List, Optional, Union
 from ms_agent.llm import LLM
 from ms_agent.llm.cost import (response_usage, set_response_usage,
                                update_usage_snapshot)
-from ms_agent.llm.io import OpenedStream, interrupt_stream
+from ms_agent.llm.io import (OpenedStream, OwnedResponse,
+                             create_owned_response, interrupt_stream)
 from ms_agent.llm.thinking import (THINKING_PARAM_KEYS, apply_effort,
                                    create_with_thinking_fallback)
 from ms_agent.llm.utils import Message, Tool, ToolCall, normalize_finish_reason
@@ -131,7 +132,10 @@ class Anthropic(LLM):
         api_key: Optional[str] = None,
     ):
         super().__init__(config)
-        assert_package_exist('anthropic', 'anthropic')
+        assert_package_exist(
+            'anthropic',
+            "Install the Anthropic integration with "
+            "`pip install 'anthropic>=0.117.0,<1'`.")
         import anthropic
 
         self.model: str = config.llm.model
@@ -179,6 +183,9 @@ class Anthropic(LLM):
 
     def interrupt(self) -> None:
         """Close the owned HTTP stream, including before iteration starts."""
+        cancelled = getattr(self, '_request_cancel', None)
+        if cancelled is not None:
+            cancelled.set()
         stream = self._active_stream
         interrupt_stream(stream)
         if self._active_stream is stream:
@@ -283,7 +290,7 @@ class Anthropic(LLM):
                 opened = OpenedStream(self.client.messages.stream(**call))
                 self._active_stream = opened
                 return opened
-            return self.client.messages.create(**call)
+            return create_owned_response(self.client.messages, self, **call)
 
         # This legacy engine owned no repair at all: a model that cannot think
         # rejected the `thinking` block with a hard 400 and the error went
@@ -294,7 +301,8 @@ class Anthropic(LLM):
         return create_with_thinking_fallback(_send, self.client, self.model,
                                              logger, **rest)
 
-    @retry(max_attempts=LLM.retry_count, delay=3.0)
+    @retry(max_attempts=LLM.retry_count, delay=3.0,
+           cancellation_owner=lambda self: self)
     def generate(self,
                  messages: List[Message],
                  tools: Optional[List[Tool]] = None,
@@ -335,6 +343,7 @@ class Anthropic(LLM):
         )
         tool_call_id_map = {}  # index -> tool_call_id (用于去重 yield)
         with stream_manager as stream:
+            stream = OwnedResponse(stream)
             self._active_stream = stream
             try:
                 full_content = ''

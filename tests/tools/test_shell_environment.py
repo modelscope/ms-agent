@@ -68,7 +68,7 @@ def test_shell_call_ignores_unknown_description(tmp_path):
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX command quoting')
 def test_real_shell_and_background_use_selected_python(tmp_path, monkeypatch):
     project_env = tmp_path / 'task-env'
-    venv.EnvBuilder(with_pip=True).create(project_env)
+    venv.EnvBuilder(with_pip=True, symlinks=True).create(project_env)
     monkeypatch.setenv('MS_AGENT_SHELL_PATH', str(project_env / 'bin') + os.pathsep + os.defpath)
     parent_path = os.environ.get('PATH')
     expected = str(project_env)
