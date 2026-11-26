@@ -57,6 +57,13 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 
 ## 🎉 News
 
+- 🚀 **Nov 26, 2026: MS-Agent v1.7.0 is released — upgrading the multi-surface workspace and customizable Agent Harness for controllable, extensible long-horizon execution.** Published on [PyPI](https://pypi.org/project/ms-agent/1.7.0/) and Docker, and available to explore online in [ModelScope Agent Playground](https://www.modelscope.cn/agents/playground) ([Release Notes](https://github.com/modelscope/ms-agent/releases/tag/v1.7.0)):
+  - **Redesigned WebUI Workspace & Native TUI**: Rebuilt the browser workspace (`ms-agent ui`) and introduced a default terminal interface (`ms-agent`) on one shared SDK runtime, delivering end-to-end execution visibility, mid-run steering and interactive decision-making, multi-branch session exploration, and inline workspace file collaboration for local projects. [WebUI guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/webui.md) · [TUI guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/tui.md)
+  - **Multi-Layer Context & Memory Architecture**: Decouples immutable session history, active model context, and persistent cross-session memory—combining composable context pruning and auto/manual compaction strategies, a pluggable unified memory layer (from local files to adapters such as ReMe and mem0), and native compatibility with standard workspace instruction and prompt templates (such as `AGENTS.md`) for resilient long-horizon execution and recovery. [Context](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/context.md) · [Memory](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/memory.md)
+  - **Fine-Grained Execution Control & Production Security**: Introduces scriptable lifecycle Hooks, execution feedback controls, and Cron scheduling to precisely customize agent boundaries and recurring automation; adds layered permission approvals, encryption at rest for managed credentials, optional single-user WebUI authentication, and fault-isolated MCP startup for reliable local and remote deployments. [Permissions](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/hooks.md) · [Credentials](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/credentials.md)
+  - **Skill Lifecycle Governance & Evaluation-Driven Evolution**: Streamlines Skill installation and maintenance with pre-update diff review and version rollback, turning skills into auditable engineering assets; supports the **Skill Evolution** workflow to iteratively refine skills from execution traces, automated evaluations, and reflection feedback, comparing candidates on a validation set. [Skill management](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/skill-management.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README.md)
+  - **Open Protocols & Cross-Framework Ecosystem**: Natively reuses community plugins across formats such as Claude Code, Codex, and OpenClaw, supports migrating and synchronizing instructions, skills, and memory across frameworks via **Agent Hub**, and connects editors, interactive clients, and remote agents through **ACP** and **A2A**. [Plugins](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/a2a.md)
+
 * 🚀 Jul 13, 2026: Added **Agent Hub** support for managing agent workspace files locally and in remote ModelScope repositories with `ms-agent agent`. Features include uploads and downloads, background sync (`watch`), conversion between frameworks, status checks, backups, and restoration for `qoder`, `qwenpaw`, `openclaw`, `hermes`, `nanobot`, `openhuman`, and `ms-agent`.
 
 * 🏆 Apr 09, 2026: Agentic Insight v2 is now **#2 Open-Source** (#5 Overall) on [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) — scoring **55.31** with the submitted version (Qwen3.5-Plus + GPT 5.2). [Leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/v2/README.md).
@@ -148,35 +155,47 @@ For earlier demos and documentation, see [ModelScope-Agent 0.8.0 and earlier](ht
 
 ## ✨ Features
 
+<a id="unified-multi-surface-agent-workspace"></a>
+
+### 🖥️ Unified Multi-Surface Agent Workspace
+
+One shared Python SDK runtime powers the **browser WebUI (`ms-agent ui`), native terminal TUI (`ms-agent`), CLI, and embedded application integrations**. Built for real project workflows, it provides end-to-end reasoning and tool observability, queued and mid-run steering inputs, structured interactive decision-making, session branching from any completed turn, inline workspace file collaboration, and built-in multi-provider model capability metadata for automatic context budgeting, thinking controls, and vision alignment. [WebUI guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/webui.md) · [TUI guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/tui.md)
+
 <a id="a-customizable-agent-harness"></a>
 
-### 🧩 A Customizable Agent Harness
+### 🧩 Customizable Harness & Production Security
 
-An extensible runtime brings together tool execution, permission checks, and feedback. Use **lifecycle callbacks and Hooks** to integrate business rules, validate plans, and check results. Customize how agents act, when people intervene, and how execution feedback informs the next step.
+**Extensible Execution & Customization**: Organizes tool execution, plan checks, and feedback loops into a highly customizable runtime—use **lifecycle callbacks and command-based Hooks** to apply business rules, inspect or rewrite tool arguments, and drive feedback loops, paired with recurring task scheduling for research, monitoring, and continuous maintenance.
+
+**Production Security & Fault Isolation**: Defines clear boundaries between autonomous execution and human approval through **rule-based safety guards and layered permission policies**, paired with **encryption at rest for managed credentials**, optional **single-user WebUI authentication**, and **MCP startup fault isolation** for reliable local and remote deployments. [Permissions](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/hooks.md) · [Credentials](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/credentials.md)
 
 <a id="context-and-memory-for-long-running-tasks"></a>
 
 ### 🧠 Context and Memory for Long-running Tasks
 
-Manage **session history, active context, and project memory** as distinct layers. Preserve full records while pruning tool output and compacting older context, then draw on project memory in later tasks. Cron supports recurring and one-time jobs for ongoing research, monitoring, and maintenance.
+Manages **immutable session history, active model context, and persistent project memory** as three decoupled layers: session logs preserve full records for crash-safe recovery, the context layer supports composable tool-output pruning and automatic/manual compaction, and the unified memory layer supports pluggable backends (local file storage as well as ReMe, mem0, and other adapters). Native compatibility with `SOUL.md`, `AGENTS.md`, and `PROFILE.md` brings standard workspace instructions and prompt templates seamlessly into long-horizon workflows. [Context management](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/context.md) · [Memory](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/memory.md) · [Workspace personalization](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/personalization.md)
 
 <a id="autonomous-collaboration-and-explicit-workflows"></a>
 
 ### 🤝 Autonomous Collaboration and Explicit Workflows
 
-Let a lead agent delegate open-ended tasks to specialist sub-agents, or define stages and dependencies with **sequential workflows or directed acyclic graphs (DAGs)**. Choose models, tools, and skills for each role to suit the task, from autonomous exploration to execution in defined stages.
+Let a lead agent dynamically delegate open-ended tasks to specialist sub-agents with isolated contexts, or define deterministic stages and dependencies through explicit workflows. Tailor models, tools, and skills per role to move smoothly from autonomous exploration to structured delivery. [Sub-agents](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/subagents.md) · [Workflows](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/workflows.md)
 
 <a id="reusable-agent-skills-with-evaluation-driven-improvement"></a>
 
-### 📈 Reusable Agent Skills with Evaluation-driven Improvement
+### 📈 Managed, Evaluation-Driven Agent Skills
 
-Package domain knowledge and procedures into skills loaded on demand and reused across tasks. A dedicated **Skill Evolution** workflow uses execution traces and evaluation feedback to revise skills, then tests candidate updates on a validation set, making improvements measurable.
+Package domain knowledge and operating procedures into **progressively disclosed Agent Skills** reused across tasks. Install and upgrade Skills directly from GitHub or ModelScope links with pre-update file diff reviews and one-click rollback, keeping team skills auditable and maintainable. [Installation and updates](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/skill-management.md)
+
+The **Skill Evolution** workflow builds on execution traces and evaluation feedback to generate candidate revisions, compares them on a validation set, and tracks skill versions and scores for verifiable, evidence-backed improvement. [Workflow guide](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README.md)
 
 <a id="an-open-ecosystem-with-portable-agent-resources"></a>
 
-### 🔌 An Open Ecosystem with Portable Agent Resources
+### 🔌 Open Protocols and Portable Agent Ecosystem
 
-Connect to multiple model providers, use MCP for external tools, integrate with editors and other agents through ACP / A2A, and extend functionality with plugins. **Agent Hub** converts, merges, and synchronizes instructions, skills, and memory across frameworks so you can reuse them in different environments. Applications can also be exposed as MCP services.
+Connect to mainstream model providers within a lock-in-free interoperability layer: integrate natively with code editors and interactive clients over **ACP (Agent Client Protocol)**—supporting both bidirectional integration and external agent proxying—and enable cross-service discovery and remote agent collaboration over **A2A (Agent-to-Agent)**.
+
+Natively reuse community plugins across formats such as **Claude Code, Codex, and OpenClaw** (skills, commands, agent definitions, Hooks, and MCP configurations), and use **Agent Hub (`ms-agent agent`)** to convert, redact, synchronize, back up, and restore instructions, skills, and memory across frameworks such as **MS-Agent, QwenPaw, OpenClaw, and Hermes**, among others. [Plugin support](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/a2a.md)
 
 <a id="from-framework-capabilities-to-domain-applications"></a>
 
@@ -188,18 +207,16 @@ Built-in applications bring models, tools, and multi-agent collaboration togethe
 
 ## 🚀 Installation
 
-Install from [PyPI](https://pypi.org/project/ms-agent/) or [source](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#source-install). The steps below use PyPI.
+Install from [PyPI](https://pypi.org/project/ms-agent/), [Docker](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/deployment.md#docker), or [source](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md#source-install), or explore online with zero setup. Pick the fastest path for your workflow:
 
-Choose the interface that fits your work. Start with **WebUI** to explore projects, sessions, and tool use. You can also work in the terminal or integrate the SDK into a Python application.
+| Interface | Best suited for | Fastest way to start |
+| :--- | :--- | :--- |
+| ☁️ **[Agent Playground](https://www.modelscope.cn/agents/playground)** | Zero-setup online trial directly on ModelScope | [Try modelscope.cn/agents/playground](https://www.modelscope.cn/agents/playground) |
+| 🖥️ **[WebUI](#webui)** | Local browser workspace with live execution visibility & file editing (Python 3.12+, Node 22.22.0+, pnpm) | `python -m pip install -U "ms-agent[webui]"` → `ms-agent ui` |
+| ⌨️ **[TUI / CLI / SDK](#terminal-and-sdk)** | Terminal sessions, scripts, or Python application integration (Python 3.10+) | `python -m pip install -U ms-agent` → `ms-agent` |
+| 🐳 **[Docker Image](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/deployment.md#docker)** | Zero host Python / Node setup for instant workspace deployment | `docker run ... ms-agent:1.7.0` ([Deployment guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/deployment.md#docker)) |
 
-| Interface | Best suited for |
-| --- | --- |
-| 🖥️ **[WebUI](#webui)** | Work on local projects in the browser, follow task progress, and review results |
-| ⌨️ **[TUI](#terminal-and-sdk)** | Chat with agents and manage or resume sessions in the terminal |
-| 🛠️ **[CLI](#terminal-and-sdk)** | Run a single task or use agents from scripts |
-| 🐍 **[Python SDK](#terminal-and-sdk)** | Customize agents and embed them in applications |
-
-For the default ModelScope provider, get an API key from the [access token page](https://modelscope.cn/my/myaccesstoken).
+For the default ModelScope provider, get an API key from the [access token page](https://modelscope.cn/my/myaccesstoken). The local steps below use PyPI.
 
 <a id="webui"></a>
 
@@ -387,7 +404,7 @@ Start with a topic or plain-text material and coordinate scripting, storyboardin
 
 ### 🧬 Skill Evolution · Improve Skills with Task Feedback
 
-For tasks that can be evaluated automatically, run the current skills, collect traces and scores, then use reflection and skill-management agents to create or revise skills. Candidate updates are tested on a validation set and accepted only if scores improve. A SearchQA baseline provides a starting point for studying how task experience can improve a skill library.
+For tasks that can be evaluated automatically, run the current skills, collect traces and scores, then use reflection and skill-management agents to create or revise skills. The workflow compares candidates on a validation set, then separately tests the initial version, the final version, and the version with the highest validation score. A SearchQA baseline provides a starting point for studying how task experience can improve a skill library.
 
 [Workflow and usage guide](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README.md)
 
@@ -395,10 +412,19 @@ For tasks that can be evaluated automatically, run the current skills, collect t
 
 ## 📚 Documentation
 
-- [Quick start](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md): install the WebUI or the terminal and complete your first task
-- [WebUI guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/webui.md): everyday use in the browser
-- [User documentation](https://ms-agent-en.readthedocs.io/en/latest/): the full hosted manual
-- [Contributor guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/development/contributing.md): contribute to the framework and applications
+Jump directly to the guide you need (or browse the **[Full Documentation](https://ms-agent-en.readthedocs.io/en/latest/)**):
+
+| Goal | Start here |
+| :--- | :--- |
+| Try an agent online or complete a first local task | [Agent Playground](https://www.modelscope.cn/agents/playground) · [Quick start](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/quick-start.md) · [Python SDK](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/get-started/python-sdk.md) |
+| Work on projects in a browser or terminal and steer long tasks | [WebUI workspace](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/webui.md) · [TUI](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/tui.md) · [Projects and sessions](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/projects-sessions.md) |
+| Manage long-horizon context, unified memory, and workspace instructions | [Context management](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/context.md) · [Memory](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/memory.md) · [Personalization](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/personalization.md) · [Scheduled tasks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/scheduled-tasks.md) |
+| Install, review updates, or evolve Agent Skills | [Skill management](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/skill-management.md) · [Skill mechanisms](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/skills.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/applications/skill-evolution.md) |
+| Customize execution control, permissions, and multi-agent collaboration | [Permissions](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/hooks.md) · [Callbacks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/callbacks.md) · [Sub-agents](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/subagents.md) · [Workflows](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/workflows.md) |
+| Reuse community plugins, sync across frameworks, or connect open protocols | [Plugins](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/agent-hub.md) · [MCP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/mcp-client.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/core/a2a.md) |
+| Deploy remotely, migrate encrypted credentials, or troubleshoot issues | [Deployment](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/deployment.md) · [Credentials](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/credentials.md) · [Troubleshooting](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/user-guide/troubleshooting.md) |
+
+[Architecture](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/development/architecture.md) · [Configuration reference](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/development/configuration-reference.md) · [CLI reference](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/development/cli-reference.md) · [Contributor guide](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/en/development/contributing.md)
 
 <a id="license"></a>
 

@@ -57,6 +57,13 @@
 
 ## 🎉 新闻
 
+- 🚀 **2026年11月26日：发布 MS-Agent v1.7.0 —— 全面升级多端工作台与可定制 Agent Harness，让复杂长程任务更可控、更易扩展。** 现已同步发布 [PyPI 安装包](https://pypi.org/project/ms-agent/1.7.0/) 与 Docker 镜像，也可在 [魔搭 Agent 实验场](https://www.modelscope.cn/agents/playground) 在线体验（[Release Notes](https://github.com/modelscope/ms-agent/releases/tag/v1.7.0)）：
+  - **全新 WebUI 工作台与终端 TUI**：重构浏览器工作台（`ms-agent ui`）并推出默认终端界面（`ms-agent`），与 SDK 共享统一运行时底座，围绕本地项目支持全过程任务观测、运行中动态干预与交互决策、多路径会话分支探索及工作区文件协同。[WebUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md)
+  - **面向长程任务的多层上下文与记忆架构**：将完整会话历史、模型活跃上下文与跨会话长期记忆解耦治理，支持可组合的上下文裁剪与自动/手动压缩策略、多后端可插拔的统一记忆体系（涵盖本地文件及 ReMe、mem0 等生态适配），并原生兼容 `AGENTS.md` 等主流工作区指令与提示词模板体系，保障复杂长链路任务稳定演进与断点续接。[上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆架构](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md)
+  - **精细化执行控制与生产级安全加固**：在执行控制侧引入可编程生命周期 Hooks、执行过程反馈与 Cron 周期调度，支持精细定制智能体行为边界与自动化节奏；落地分层权限审批、受管凭据静态加密、WebUI 可选单用户认证及 MCP 服务故障隔离，全面提升本地与远程部署的可靠性。[权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [凭据安全](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md)
+  - **技能全生命周期治理与评测驱动进化**：优化 Skills 安装与维护体验，提供更新前差异审查与版本回溯，让技能成为可审计的工程资产；支持 **Skill Evolution** 工作流，基于执行轨迹、自动评测与反思反馈迭代修订技能，并在验证集上对比筛选有效演进。[技能管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
+  - **开放协议与跨框架生态互通**：原生兼容 Claude Code、Codex、OpenClaw 等主流社区插件格式，支持通过 **Agent Hub** 功能实现跨框架的指令、技能与记忆迁移同步，打通 **ACP** 编辑器与客户端接入以及 **A2A** 远端智能体协同。[插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md)
+
 * 🚀 2026年7月13日：支持 **Agent Hub** —— 通过 `ms-agent agent` 命令在本地与远端 ModelScope 仓库之间管理 agent 工作区文件：上传/下载、后台同步（`watch`）、跨框架转换、状态查看、备份与恢复，覆盖 `qoder`、`qwenpaw`、`openclaw`、`hermes`、`nanobot`、`openhuman` 与 `ms-agent`。
 
 - 🏆 **2026年4月9日**：Agentic Insight v2 在 [DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench) 上位列**开源方案 #2**（总榜 #5）——提交版本得分 **55.31**（Qwen3.5-Plus + GPT 5.2）。[排行榜](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) | [Agentic Insight v2](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/deep_research/v2/README.md)。
@@ -152,35 +159,47 @@
 
 ## ✨ 核心特性
 
+<a id="统一内核的多端交互工作台"></a>
+
+### 🖥️ 统一内核的多端交互工作台
+
+以共享 Python SDK 为统一执行底座，无缝驱动 **WebUI 浏览器工作台（`ms-agent ui`）、原生终端 TUI（`ms-agent`）、CLI 与业务系统嵌入调用**。面向真实项目场景提供透明的执行过程观测、运行中排队与动态插话、结构化交互决策、任意历史节点的会话分支探索以及同屏文件编辑与预览，并内置多厂商模型能力元数据，开箱即可自动对齐上下文预算、思考档位与视觉能力。[WebUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md)
+
 <a id="可定制的-agent-harness"></a>
 
-### 🧩 可定制的 Agent Harness
+### 🧩 可定制 Harness 与生产安全底座
 
-将工具执行、权限确认与过程反馈组织成可扩展的运行机制。通过**生命周期回调与 Hooks** 接入业务规则、计划检查和结果验证，让开发者能够定制智能体如何行动、何时接受人工干预，以及怎样利用执行反馈继续工作。
+**可扩展的执行编排与定制**：将工具调用、计划检查与过程反馈组织为高度可定制的运行时架构，通过**生命周期回调与命令型 Hooks** 灵活注入业务规则、审查或改写调用参数并驱动反馈闭环，结合周期任务调度支撑研究、巡检与持续维护工作。
+
+**生产级安全边界与容错加固**：通过**规则级安全护栏与分层权限审批体系**明确自动执行与人工确认边界，配合**受管凭据静态加密**、**WebUI 可选单用户登录认证**以及 **MCP 启动故障隔离机制**，保障本地项目与远程部署的安全可控。[权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [凭据安全](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md)
 
 <a id="面向长任务的上下文与记忆"></a>
 
 ### 🧠 面向长任务的上下文与记忆
 
-将**会话历史、当前上下文与项目记忆**分层管理：保留完整记录，按需裁剪工具输出、压缩历史内容，并在后续任务中利用项目记忆。配合 Cron 的定时、周期与单次任务调度，支持需要反复推进的研究、巡检和维护工作。
+将**完整会话历史、模型活跃上下文与跨任务项目记忆**三层解耦治理：会话日志完整留痕并支持断点恢复，上下文层支持可组合的工具输出裁剪与自动/手动压缩策略，记忆层提供统一协议与可插拔后端（覆盖本地文件存储及 ReMe、mem0 等生态适配），同时原生兼容 `SOUL.md`、`AGENTS.md`、`PROFILE.md` 等工作区指令与提示词模板，让长周期任务持续保持连贯性与可追溯性。[上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md) · [工作区个性化](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/personalization.md)
 
 <a id="自主协作与显式工作流编排"></a>
 
 ### 🤝 自主协作与显式工作流编排
 
-开放式任务可以由主智能体动态委派给专用子智能体；阶段和依赖明确的任务，则可使用**链式或 DAG 工作流**编排。为不同角色选择模型、工具与技能，从自主探索到分步交付，按任务需要组织协作。
+开放式复杂任务可由主智能体动态委派给拥有独立上下文的专用子智能体；阶段与依赖清晰的生产流程，则可通过工作流显式编排。支持为不同角色按需组合模型、工具与技能，实现从自主探索到分步交付的无缝衔接。[子智能体](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/subagents.md) · [工作流](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/workflows.md)
 
 <a id="可复用可评测的-agent-skills"></a>
 
-### 📈 可复用、可评测的 Agent Skills
+### 📈 可治理、可评测进化的 Agent Skills
 
-将领域知识与操作方法组织为按需加载的技能，供不同任务复用。独立的 **Skill Evolution** 工作流进一步利用执行轨迹和评测反馈修订技能，通过验证集筛选更新，为经验积累与能力改进提供可检验的依据。
+将领域知识与标准作业流程封装为**按需渐进加载的 Agent Skills**，跨任务高效复用。支持从 GitHub / ModelScope 链接直接安装与升级，提供更新前文件 Diff 审查与一键版本回溯，让技能成为可审计的团队工程资产。[安装与更新](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md)
+
+**Skill Evolution** 工作流进一步基于执行轨迹与评测反馈自动提炼修订方案，在验证集上对候选技能进行系统性对比评估并保留历史版本与得分，让经验沉淀与能力演进有据可循。[工作流说明](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
 
 <a id="开放生态与跨框架资产复用"></a>
 
-### 🔌 开放生态与跨框架资产复用
+### 🔌 开放协议与跨框架生态互通
 
-接入多家模型服务，通过 MCP 连接外部工具，通过 ACP / A2A 对接编辑器与其他智能体，并利用插件组合扩展能力。**Agent Hub** 支持跨框架转换、合并和同步指令、技能与记忆，让已有积累可以随工作环境迁移；应用也可作为 MCP 服务供外部智能体调用。
+支持接入主流模型服务，构建无生态锁定的开放互操作层：通过 **ACP（Agent Client Protocol）** 实现与主流代码编辑器及交互客户端的双向接入与会话代理；通过 **A2A（Agent-to-Agent）** 支持跨服务远端智能体的能力发现与任务协同。
+
+原生兼容 **Claude Code、Codex、OpenClaw** 等社区插件格式中的技能、命令、Agent 定义、Hooks 与 MCP 配置，并通过 **Agent Hub（`ms-agent agent`）** 实现指令、技能与记忆在 **MS-Agent、QwenPaw、OpenClaw、Hermes** 等框架间的转换、脱敏同步与备份恢复。[插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md)
 
 <a id="从框架能力到专业应用"></a>
 
@@ -192,18 +211,16 @@
 
 ## 🚀 安装
 
-可从 [PyPI](https://pypi.org/project/ms-agent/) 或[源码](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#source-install)安装，以下以 PyPI 安装为例。
+可从 [PyPI](https://pypi.org/project/ms-agent/)、[Docker 镜像](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker) 或[源码](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md#source-install)安装，也可零门槛在线体验。按你的使用方式选择最短路径：
 
-选择适合你的入口。推荐先从 **WebUI** 体验项目、会话与工具协作；也可以直接使用终端界面，或将 SDK 集成到 Python 应用中。
+| 使用入口 | 适合的场景 | 最快上手命令 / 链接 |
+| :--- | :--- | :--- |
+| ☁️ **[Agent 实验场](https://www.modelscope.cn/agents/playground)** | 零安装、在魔搭社区直接体验 MS-Agent 能力 | [立即体验 modelscope.cn/agents/playground](https://www.modelscope.cn/agents/playground) |
+| 🖥️ **[WebUI](#webui)** | 浏览器本地项目工作台，实时查看执行过程、编辑文件（Python 3.12+、Node 22.22.0+、pnpm） | `python -m pip install -U "ms-agent[webui]"` → `ms-agent ui` |
+| ⌨️ **[TUI / CLI / SDK](#终端与-sdk)** | 终端持续协作、脚本自动化或嵌入 Python 应用（Python 3.10+） | `python -m pip install -U ms-agent` → `ms-agent` |
+| 🐳 **[Docker 镜像](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker)** | 宿主机零 Python / Node 环境，一键启动工作台 | `docker run ... ms-agent:1.7.0`（见[部署指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md#docker)） |
 
-| 使用入口 | 适合的场景 |
-| --- | --- |
-| 🖥️ **[WebUI](#webui)** | 在浏览器中处理本地项目、查看执行过程与成果 |
-| ⌨️ **[TUI](#终端与-sdk)** | 在终端持续对话、管理和恢复会话 |
-| 🛠️ **[CLI](#终端与-sdk)** | 执行单次任务，或与脚本配合使用 |
-| 🐍 **[Python SDK](#终端与-sdk)** | 自定义智能体并集成到应用 |
-
-项目支持使用默认的 ModelScope 服务商，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key。
+项目默认支持 ModelScope 推理服务，可在[访问令牌页面](https://modelscope.cn/my/myaccesstoken)获取 API Key；以下本地安装步骤均以 PyPI 为例。
 
 <a id="webui"></a>
 
@@ -389,7 +406,7 @@ asyncio.run(main())
 
 ### 🧬 Skill Evolution · 用任务反馈改进技能
 
-面向可自动评测的任务，运行当前技能、收集轨迹与得分，再由反思和技能管理智能体提炼经验、创建或修订技能。候选更新经过验证集筛选，只有表现提升才被接受；内置 SearchQA 基线，便于研究技能如何从任务经验中持续改进。
+面向可自动评测的任务，运行当前技能、收集轨迹与得分，再由反思和技能管理智能体提炼经验、创建或修订技能。工作流在验证集上比较候选技能，最后分别测试初始版本、最终版本和验证表现最佳的版本；内置 SearchQA 基线，便于研究技能如何从任务经验中改进。
 
 [工作流与运行指南](https://github.com/modelscope/ms-agent/blob/release/1.7/projects/skill_evolution/README_zh.md)
 
@@ -397,10 +414,19 @@ asyncio.run(main())
 
 ## 📚 文档
 
-- [快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md)：安装 WebUI 或终端，完成第一次对话
-- [WebUI 教程](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md)：在浏览器中的日常使用
-- [用户文档站点](https://ms-agent.readthedocs.io/zh-cn/latest/)：完整在线手册
-- [贡献指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/contributing.md)：参与框架与应用开发
+按需直达对应文档（支持在线阅读 **[完整中文文档](https://ms-agent.readthedocs.io/zh-cn/latest/)**）：
+
+| 需求 | 推荐入口 |
+| :--- | :--- |
+| 零门槛在线试用，或在本地完成第一个任务 | [Agent 实验场](https://www.modelscope.cn/agents/playground) · [本地快速开始](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/quick-start.md) · [Python SDK](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/get-started/python-sdk.md) |
+| 在浏览器或终端中管理项目并掌控长任务过程 | [WebUI 工作台](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/webui.md) · [TUI 终端](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/tui.md) · [项目与会话分支](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/projects-sessions.md) |
+| 治理长任务上下文、统一记忆与工作区个性化 | [上下文管理](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/context.md) · [记忆架构](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/memory.md) · [个性化模板](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/personalization.md) · [定时调度](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/scheduled-tasks.md) |
+| 安装、审查更新或评测进化 Skills | [Skill 安装与更新](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/skill-management.md) · [技能机制](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/skills.md) · [Skill Evolution](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/applications/skill-evolution.md) |
+| 定制执行控制、安全权限与多智能体协作 | [权限](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/permissions.md) · [Hooks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/hooks.md) · [Callbacks](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/callbacks.md) · [子智能体](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/subagents.md) · [工作流](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/workflows.md) |
+| 复用社区插件、跨框架同步或对接开放协议 | [插件生态](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/plugins.md) · [Agent Hub](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/agent-hub.md) · [MCP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/mcp-client.md) · [ACP](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/acp.md) · [A2A](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/core/a2a.md) |
+| 远程部署、凭据加密迁移或排查问题 | [部署与认证](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/deployment.md) · [密钥保存与恢复](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/credentials.md) · [故障排查](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/user-guide/troubleshooting.md) |
+
+[架构总览](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/architecture.md) · [配置参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/configuration-reference.md) · [CLI 参考](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/cli-reference.md) · [贡献指南](https://github.com/modelscope/ms-agent/blob/release/1.7/docs/zh/development/contributing.md)
 
 <a id="许可证"></a>
 
