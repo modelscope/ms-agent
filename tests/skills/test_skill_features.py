@@ -311,6 +311,62 @@ class TestSkillSearchEngine(unittest.TestCase):
         self.assertEqual(result["skills"][0]["skill_id"], "paper-finder")
         self.assertIn("relevance_score", result["skills"][0])
 
+    def test_search_after_disabling_all_skills(self):
+        from ms_agent.skill.search import SkillSearchEngine
+        engine = SkillSearchEngine(self.catalog, backend='bm25')
+        self.assertTrue(engine.search("papers"))
+
+        for skill_id in list(self.catalog.get_enabled_skills()):
+            self.catalog.disable_skill(skill_id)
+
+        self.assertEqual(engine.search("papers"), [])
+        self.assertEqual(engine.search("papers"), [])
+
+        self.catalog.enable_skill("paper-finder")
+        self.assertEqual(
+            [sid for sid, _ in engine.search("papers")], ["paper-finder"])
+
+    def test_search_after_removing_all_skills(self):
+        from ms_agent.skill.search import SkillSearchEngine
+        engine = SkillSearchEngine(self.catalog, backend='bm25')
+        self.assertTrue(engine.search("papers"))
+
+        for skill_id in list(self.catalog.get_enabled_skills()):
+            self.catalog.remove_skill(skill_id)
+
+        self.assertEqual(engine.search("papers"), [])
+        self.assertEqual(engine.search("papers"), [])
+
+        skill_dir = _make_skill_dir(
+            self.tmp, "new-papers", "New Papers", "Find research papers")
+        self.catalog.add_skill(str(skill_dir))
+        self.assertEqual(
+            [sid for sid, _ in engine.search("papers")], ["new-papers"])
+
+    def test_empty_catalog_clears_hybrid_retrievers(self):
+        from ms_agent.retriever.bm25 import BM25Retriever
+        from ms_agent.retriever.hybrid import HybridRetriever
+        from ms_agent.skill.search import SkillSearchEngine
+
+        # Exercise composite index reset without downloading embedding models.
+        retrievers = [BM25Retriever(), BM25Retriever()]
+        hybrid = HybridRetriever(retrievers)
+        with patch.object(SkillSearchEngine, '_build_retriever',
+                          return_value=hybrid):
+            engine = SkillSearchEngine(self.catalog, backend='hybrid')
+        self.assertTrue(engine.search("papers"))
+
+        for skill_id in list(self.catalog.get_enabled_skills()):
+            self.catalog.disable_skill(skill_id)
+
+        self.assertEqual(engine.search("papers"), [])
+        for retriever in retrievers:
+            self.assertEqual(retriever.search("papers"), [])
+
+        self.catalog.enable_skill("paper-finder")
+        self.assertEqual(
+            [sid for sid, _ in engine.search("papers")], ["paper-finder"])
+
     def test_skills_list_with_limit(self):
         from ms_agent.skill.skill_tools import SkillToolSet
         ts = SkillToolSet(DictConfig({}), self.catalog)
