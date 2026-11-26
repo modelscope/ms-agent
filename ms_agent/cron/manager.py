@@ -161,6 +161,10 @@ class JobManager:
         self._repo.save_job_and_state(job, state)
 
     def get_history(self, job_id: str, limit: int = 10) -> List[RunRecord]:
+        if limit < 0:
+            raise ValueError('History limit must be non-negative.')
+        if limit == 0:
+            return []
         pair = self._repo.get_job_with_state(job_id)
         if pair is None:
             return []

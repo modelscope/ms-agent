@@ -136,7 +136,7 @@ No additional arguments.
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
 | `job_id` | required | See command purpose |
-| `--limit` | 10 | See command purpose |
+| `--limit` | 10 | Maximum number of recent runs to show (0 shows none). |
 
 ## `ms-agent cron output`
 

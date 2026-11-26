@@ -136,7 +136,7 @@
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
 | `job_id` | 必填 | 见命令用途 |
-| `--limit` | 10 | 见命令用途 |
+| `--limit` | 10 | Maximum number of recent runs to show (0 shows none). |
 
 ## `ms-agent cron output`
 
