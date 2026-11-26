@@ -7,11 +7,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import quote
+from urllib.request import Request
 
 from ms_agent.tools.fetch_playwright_fallback import (
     looks_like_spa_shell_html, try_playwright_inner_text)
+from ms_agent.tools.url_safety import is_safe_public_url, safe_urlopen
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -79,15 +80,7 @@ def _postprocess_text(raw_text: str) -> str:
 
 
 def _is_direct_http_allowed(url: str) -> bool:
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ('http', 'https'):
-            return False
-        if not parsed.netloc:
-            return False
-        return True
-    except Exception:
-        return False
+    return is_safe_public_url(url)
 
 
 def _html_to_plaintext(html: str) -> str:
@@ -124,7 +117,7 @@ def _fetch_direct_http_pair(url: str, timeout: float) -> Tuple[str, str]:
         return '', ''
     try:
         req = Request(url, headers=_DIRECT_FETCH_HEADERS)
-        with urlopen(req, timeout=timeout) as resp:
+        with safe_urlopen(req, timeout=timeout) as resp:
             raw = resp.read(_MAX_DIRECT_RESPONSE_BYTES + 1)
             if len(raw) > _MAX_DIRECT_RESPONSE_BYTES:
                 raw = raw[:_MAX_DIRECT_RESPONSE_BYTES]
@@ -201,8 +194,14 @@ def fetch_single_text_with_meta(
 
     Returns:
         (text, meta) where ``meta['content_source']`` is one of:
-        ``jina_reader`` | ``direct_http_fallback`` | ``playwright_fallback`` | ``none``.
+        ``jina_reader`` | ``direct_http_fallback`` | ``playwright_fallback`` | ``none`` | ``blocked``.
     """
+    if not is_safe_public_url(url):
+        logger.warning('Blocked fetch of non-public URL: %s', url[:80])
+        return '', {
+            'content_source': 'blocked',
+            'fetch_error': 'blocked_non_public_url',
+        }
     jina_raw = _fetch_via_jina(url, config)
     jina_text = _postprocess_text(jina_raw)
     if jina_text:

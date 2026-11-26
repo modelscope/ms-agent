@@ -18,6 +18,7 @@ import re
 import threading
 from typing import Dict, List, Tuple
 
+from ms_agent.tools.url_safety import is_safe_public_url
 from ms_agent.utils.logger import get_logger
 
 logger = get_logger()
@@ -130,6 +131,8 @@ def try_playwright_inner_text(
     """
     if not url.startswith(('http://', 'https://')):
         return ''
+    if not is_safe_public_url(url):
+        return ''
     settle_ms = max(0, int(settle_ms))
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
@@ -143,7 +146,25 @@ def try_playwright_inner_text(
     text = ''
     try:
         browser = _thread_browser()
-        page = browser.new_page()
+        context = browser.new_context()
+        page = context.new_page()
+
+        def _guard_navigation(route) -> None:
+            # Redirects are followed by the browser; re-validate every document
+            # navigation so a public URL cannot pivot to an internal one.
+            try:
+                if (route.request.resource_type == 'document'
+                        and not is_safe_public_url(route.request.url)):
+                    route.abort()
+                else:
+                    route.continue_()
+            except Exception:
+                try:
+                    route.continue_()
+                except Exception:
+                    pass
+
+        context.route('**/*', _guard_navigation)
         try:
             page.set_default_timeout(timeout_ms)
             page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
@@ -159,6 +180,10 @@ def try_playwright_inner_text(
         finally:
             try:
                 page.close()
+            except Exception:
+                pass
+            try:
+                context.close()
             except Exception:
                 pass
     except RuntimeError:
