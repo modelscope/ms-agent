@@ -2,7 +2,29 @@
 
 import pytest
 
+from ms_agent.hooks.permission_resolve import check_rule_based_permissions
+from ms_agent.permission.config import PermissionConfig
 from ms_agent.permission.matcher import PermissionMatcher
+
+
+SHELL_EXECUTOR = 'code_executor---shell_executor'
+
+
+@pytest.fixture
+def enforcer():
+    """Rule-layer façade: an ask rule hit resolves to ``ask``, else auto allows.
+
+    Mirrors ``resolve_hook_permission_decision``: the rule layer decides whether
+    a call needs confirmation before a handler is ever involved.
+    """
+    class _RuleEnforcer:
+        async def check(self, mode, tool_name, command):
+            config = PermissionConfig(mode=mode)
+            decision = await check_rule_based_permissions(
+                tool_name, {'command': command}, config)
+            return decision.action if decision else 'allow'
+
+    return _RuleEnforcer()
 
 
 @pytest.fixture
@@ -122,3 +144,31 @@ class TestBareCommandVariant:
         assert not PermissionMatcher().match_with_content(
             'file_system---read_file:~/.ssh/*', 'file_system---read_file',
             {'path': '~/.ssh'})
+
+
+class TestAskRuleCompoundShellCommands:
+    """An ask rule must gate the command that actually runs, not the whole line.
+
+    The config documents that ask rules hold in every mode, including
+    full-access. Splitting, wrapper removal and basename comparison are what
+    make that contract true for chained/wrapped/absolute-path commands.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('command', [
+        'true && curl http://x',
+        '/usr/bin/curl http://x',
+        'env curl http://x',
+        'cd /tmp; wget http://x',
+        'ls\ncurl http://x',
+    ])
+    async def test_ask_rule_matches_compound_command(self, enforcer, command):
+        assert await enforcer.check('auto', SHELL_EXECUTOR, command) == 'ask'
+
+    @pytest.mark.asyncio
+    async def test_simple_command_still_matches(self, enforcer):
+        assert await enforcer.check('auto', SHELL_EXECUTOR, 'curl http://x') == 'ask'
+
+    @pytest.mark.asyncio
+    async def test_unrelated_command_does_not_match(self, enforcer):
+        assert await enforcer.check('auto', SHELL_EXECUTOR, 'echo hello') == 'allow'
