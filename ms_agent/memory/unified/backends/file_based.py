@@ -291,6 +291,7 @@ class FileBasedBackend(BaseMemoryBackend):
         self._prompt_snapshot = None
         self._snapshot_dirty = True
         self._file_storage.invalidate_cache()
+        self._facts_storage.invalidate_cache()
 
     # -- LLM injection (backend-specific) ------------------------------
 
