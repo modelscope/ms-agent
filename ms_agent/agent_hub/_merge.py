@@ -174,7 +174,8 @@ class SectionMerger:
 
         Strategy:
         1. Start with target_default sections as the base.
-        2. For sections the user modified: replace the target section body.
+        2. For sections the user modified: replace the target section body,
+           or append the section if the target has no matching heading.
         3. For sections the user added: append at the end.
         4. Unchanged sections keep the target default version.
         """
@@ -223,6 +224,19 @@ class SectionMerger:
                             action='keep_default',
                             detail=f"Section '{tsec.title}' -- target default",
                         ))
+
+        # Different frameworks need not share headings. Keep modified source
+        # sections with no target match, in their original order.
+        for sec in modified:
+            if sec.title in modified_by_title:
+                result_secs.append(sec)
+                actions.append(
+                    MergeAction(
+                        path='',
+                        action='user_modified',
+                        detail=
+                        f"Section '{sec.title}' -- user modification preserved",
+                    ))
 
         # Append user-added sections
         for sec in added:
@@ -797,8 +811,9 @@ def _merge_hermes_entries(existing: list[str], incoming: list[str],
         if normalized in seen:
             stats['duplicates'] += 1
             continue
-        candidate = (len(entry) if not merged else
-                     current + len(_HERMES_ENTRY_DELIM) + len(entry))
+        candidate = (
+            len(entry) if not merged else current + len(_HERMES_ENTRY_DELIM)
+            + len(entry))
         if candidate > limit:
             stats['overflowed'] += 1
             continue
@@ -858,14 +873,12 @@ def _is_memory_slot(target_product: str, target_path: str) -> bool:
     """
     if target_path == _MEMORY_INDEX_PATHS.get(target_product):
         return True
-    return (target_product == 'hermes'
-            and target_path.startswith('memories/')
+    return (target_product == 'hermes' and target_path.startswith('memories/')
             and target_path.endswith('.md'))
 
 
-def _rewrite_memory_index(content: str, src_index_dir: str,
-                          moves: dict, tgt_index_dir: str,
-                          target_product: str) -> str:
+def _rewrite_memory_index(content: str, src_index_dir: str, moves: dict,
+                          tgt_index_dir: str, target_product: str) -> str:
     """Keep index links resolvable after loose files moved or were inlined:
     moved links are rewritten to the new relative location, inlined ones
     de-linked. qoder discovers detail only through index references, so
@@ -879,8 +892,8 @@ def _rewrite_memory_index(content: str, src_index_dir: str,
     basenames: dict[str, list[str]] = {}
     for src_path, new_path in moves.items():
         rel = posixpath.relpath(src_path, src_index_dir or '.')
-        new_rel = (None if new_path is None else
-                   posixpath.relpath(new_path, tgt_index_dir or '.'))
+        new_rel = (None if new_path is None else posixpath.relpath(
+            new_path, tgt_index_dir or '.'))
         forms[rel] = new_rel
         base = posixpath.basename(src_path)
         basenames.setdefault(base, []).append(rel)
@@ -1299,8 +1312,8 @@ def merge_resources(
         if path.startswith('memory/') or path.startswith('memories/'):
             # Mapped canonical files travel verbatim; unmapped loose files
             # re-home/inline onto the target's layout (never die silently).
-            if PATH_MAP.get((source_product, path), {}).get(
-                    target_product) is not None:
+            if PATH_MAP.get((source_product, path),
+                            {}).get(target_product) is not None:
                 result.merged_files[target_path] = content
                 result.actions.append(
                     MergeAction(
@@ -1331,9 +1344,8 @@ def merge_resources(
                 MergeAction(
                     path=new_path,
                     action='import',
-                    detail='Memory file imported directly'
-                    if new_path == path else
-                    (f'Loose memory file rehomed {path} -> {new_path}'),
+                    detail='Memory file imported directly' if new_path == path
+                    else (f'Loose memory file rehomed {path} -> {new_path}'),
                 ))
             continue
 
@@ -1394,8 +1406,9 @@ def merge_resources(
     # skips and reports what would never be read.
     if loose_inline:
         slot = _SINGLE_FILE_MEMORY_SLOTS.get(target_product, '')
-        cap = (_OPENHUMAN_MEMORY_INJECT_CAP
-               if target_product == 'openhuman' else None)
+        cap = (
+            _OPENHUMAN_MEMORY_INJECT_CAP
+            if target_product == 'openhuman' else None)
         base = result.merged_files.get(slot, '').rstrip()
         overflowed: list[str] = []
         for src_path, detail in sorted(loose_inline):
@@ -1434,8 +1447,8 @@ def merge_resources(
                 continue
             entries = _markdown_to_hermes_entries(markdown)
             merged, stats = _merge_hermes_entries([], entries, limit)
-            result.merged_files[slot] = (
-                _HERMES_ENTRY_DELIM.join(merged) + '\n') if merged else ''
+            result.merged_files[slot] = (_HERMES_ENTRY_DELIM.join(merged)
+                                         + '\n') if merged else ''
             detail = (f'{slot} converted to hermes entry store: '
                       f"{stats['added']} entries")
             if stats['duplicates']:

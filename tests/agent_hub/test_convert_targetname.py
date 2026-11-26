@@ -238,6 +238,54 @@ class TestConvertContentCorrectness(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def _convert_ms_agent_soul(self, content):
+        source = self.base / "ms_agent"
+        target = self.base / "qwenpaw"
+        source_spec = build_spec("ms-agent", DEFAULT_AGENT_NAME, str(source))
+        _write(source_spec.workspace_root, {"SOUL.md": content})
+        with mock.patch.dict("os.environ", {"TRY_EXP_FRAMEWORKS": ""}):
+            rc = cmd_convert(
+                source_fw="ms-agent", target_fw="qwenpaw",
+                from_name=DEFAULT_AGENT_NAME,
+                local_dir=str(source), out_dir=str(target),
+            )
+        target_spec = build_spec("qwenpaw", DEFAULT_AGENT_NAME, str(target))
+        return rc, target_spec.workspace_root / "SOUL.md"
+
+    def test_convert_keeps_modified_source_section_missing_from_target(self):
+        source = get_defaults("ms-agent")["SOUL.md"]
+        preference = "Prefer metric units."
+        source = source.replace(
+            "### Temperament\n", "### Temperament\n\n" + preference + "\n", 1)
+
+        rc, path = self._convert_ms_agent_soul(source)
+
+        self.assertEqual(rc, 0)
+        converted = path.read_text(encoding="utf-8")
+        self.assertIn(preference, converted)
+        self.assertEqual(converted.count(preference), 1)
+        self.assertIn("## Core Truths", converted)
+
+    def test_convert_skips_unchanged_source_template(self):
+        rc, path = self._convert_ms_agent_soul(
+            get_defaults("ms-agent")["SOUL.md"])
+
+        self.assertEqual(rc, 1)
+        self.assertFalse(path.exists())
+
+    def test_convert_keeps_added_source_section(self):
+        preference = "Prefer metric units."
+        source = (get_defaults("ms-agent")["SOUL.md"]
+                  + "\n## Personal preferences\n\n" + preference + "\n")
+
+        rc, path = self._convert_ms_agent_soul(source)
+
+        self.assertEqual(rc, 0)
+        converted = path.read_text(encoding="utf-8")
+        self.assertIn(preference, converted)
+        self.assertEqual(converted.count(preference), 1)
+        self.assertIn("## Core Truths", converted)
+
     def test_hermes_default_user_template_is_clean(self):
         """Regression for the § corruption in hermes memories/USER.md template."""
         defaults = get_defaults("hermes")
