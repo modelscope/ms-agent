@@ -10,7 +10,7 @@ Optional timezone suffix: "0 9 * * * Asia/Shanghai"
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Optional
 
 from ms_agent.cron.types import CronSchedule
@@ -57,6 +57,16 @@ def _validate_cron_expr(expr: str) -> None:
     croniter_cls = _try_import_croniter()
     if not croniter_cls.is_valid(expr):
         raise ValueError(f'Invalid cron expression: {expr!r}')
+
+
+def _cron_timezone(name: Optional[str]) -> tzinfo:
+    if not name:
+        return timezone.utc
+    import pytz
+    try:
+        return pytz.timezone(name)
+    except pytz.UnknownTimeZoneError as exc:
+        raise ValueError(f'Unknown cron timezone: {name!r}') from exc
 
 
 def parse_schedule(schedule_str: str,
@@ -114,10 +124,12 @@ def parse_schedule(schedule_str: str,
             f'Expected cron (5 fields), "every <N><unit>", or ISO timestamp.')
 
     _validate_cron_expr(expr)
+    tz = tz or default_timezone
+    _cron_timezone(tz)
     return CronSchedule(
         kind='cron',
         expr=expr,
-        timezone=tz or default_timezone,
+        timezone=tz,
     )
 
 
@@ -137,9 +149,7 @@ def compute_next_run(schedule: CronSchedule,
 
     if schedule.kind == 'cron':
         croniter_cls = _try_import_croniter()
-        import pytz
-        tz = pytz.timezone(
-            schedule.timezone) if schedule.timezone else timezone.utc
+        tz = _cron_timezone(schedule.timezone)
         local_base = base_time.astimezone(tz)
         cron = croniter_cls(schedule.expr, local_base)
         next_dt = cron.get_next(datetime)
@@ -180,9 +190,7 @@ def advance_next_run(schedule: CronSchedule,
 
     if schedule.kind == 'cron':
         croniter_cls = _try_import_croniter()
-        import pytz
-        tz = pytz.timezone(
-            schedule.timezone) if schedule.timezone else timezone.utc
+        tz = _cron_timezone(schedule.timezone)
         # Fast-forward: start croniter from max(base, now) so we never loop
         # over historical fire times.
         effective_base = max(base, now).astimezone(tz)

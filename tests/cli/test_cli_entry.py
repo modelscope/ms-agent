@@ -184,3 +184,29 @@ def test_unknown_word_still_prints_help(monkeypatch):
     with pytest.raises(SystemExit) as exc_info:
         run_cmd()
     assert exc_info.value.code == 2
+
+
+def test_cron_import_skips_invalid_timezone_and_keeps_valid_job(
+        monkeypatch, capsys, tmp_path):
+    from ms_agent.cron.repository import JsonJobRepository
+
+    monkeypatch.setenv('MS_AGENT_CRON_WORKSPACE', str(tmp_path))
+    jobs_dir = tmp_path / 'jobs.d'
+    jobs_dir.mkdir()
+    (jobs_dir / '01-invalid.yaml').write_text(
+        'schedule: "0 9 * * * Invalid/Timezone"\nprompt: invalid\n',
+        encoding='utf-8',
+    )
+    (jobs_dir / '02-valid.yaml').write_text(
+        'schedule: "0 9 * * * Asia/Shanghai"\nprompt: valid\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'cron', 'import'])
+
+    run_cmd()
+
+    assert 'Imported 1 job(s)' in capsys.readouterr().out
+    pairs = JsonJobRepository(tmp_path).load_all_with_state()
+    assert [job.id for job, _ in pairs] == ['02-valid']
+    assert pairs[0][0].schedule.timezone == 'Asia/Shanghai'
+    assert pairs[0][1].next_run_at.endswith('T01:00:00+00:00')
