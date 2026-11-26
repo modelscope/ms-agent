@@ -485,6 +485,10 @@ class OpenAI(LLM):
                         message.tool_calls[-1][
                             'tool_name'] = message_chunk.tool_calls[0][
                                 'tool_name']
+                    if message_chunk.tool_calls[0].get('extra_content'):
+                        message.tool_calls[-1][
+                            'extra_content'] = message_chunk.tool_calls[0][
+                                'extra_content']
                 else:
                     message.tool_calls.append(
                         ToolCall(
@@ -492,7 +496,9 @@ class OpenAI(LLM):
                             arguments=message_chunk.tool_calls[0]['arguments'],
                             type='function',
                             tool_name=message_chunk.tool_calls[0]['tool_name'],
-                            index=message_chunk.tool_calls[0]['index']))
+                            index=message_chunk.tool_calls[0]['index'],
+                            extra_content=message_chunk.tool_calls[0].get(
+                                'extra_content')))
             else:
                 message.tool_calls = message_chunk.tool_calls
         return message
@@ -590,8 +596,9 @@ class OpenAI(LLM):
                         index=tool_call.index,
                         type=tool_call.type,
                         arguments=tool_call.function.arguments,
-                        tool_name=tool_call.function.name)
-                    for tool_call in func
+                        tool_name=tool_call.function.name,
+                        extra_content=getattr(tool_call, 'extra_content',
+                                              None)) for tool_call in func
                 ]
         content = content or ''
         reasoning_content = reasoning_content or ''
@@ -629,8 +636,10 @@ class OpenAI(LLM):
                     index=getattr(tool_call, 'index', idx),
                     type=tool_call.type,
                     arguments=tool_call.function.arguments,
-                    tool_name=tool_call.function.name) for idx, tool_call in
-                enumerate(completion.choices[0].message.tool_calls)
+                    tool_name=tool_call.function.name,
+                    extra_content=getattr(tool_call, 'extra_content', None))
+                for idx, tool_call in enumerate(
+                    completion.choices[0].message.tool_calls)
             ]
         return Message(
             role='assistant',
