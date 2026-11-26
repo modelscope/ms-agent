@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) ModelScope Contributors. All rights reserved.
-"""Deliver verified development wheels using private, runner-local OSS settings."""
+"""Deliver verified development and release wheels using private, runner-local OSS settings."""
 import argparse
 import configparser
 import contextlib
@@ -19,8 +19,13 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from development_version import DEVELOPMENT
+from development_version import DEVELOPMENT, RELEASE
 import publish_webui_release as publish
+
+
+# Release tags publish X.Y.Z and RC versions; they share the versioned build path
+# with development wheels but never update the development channel.
+RELEASE_VERSION = re.compile(RELEASE + r'(?:rc\d+)?')
 
 
 class OssError(RuntimeError):
@@ -254,14 +259,16 @@ class OssStore:
 
 
 def wheel_input(directory):
+    """Return the release inputs, wheel path and development build ID (None for releases)."""
     release = publish.load_inputs(directory)
     match = DEVELOPMENT.fullmatch(release['version'])
-    if not match or not re.fullmatch(r'[0-9a-f]{40}', release['sdk_commit']):
-        raise ValueError('OSS business delivery requires a development build and full source commit')
+    if not (match or RELEASE_VERSION.fullmatch(release['version'])) or not re.fullmatch(
+            r'[0-9a-f]{40}', release['sdk_commit']):
+        raise ValueError('OSS business delivery requires a development or release build and full source commit')
     wheels = [name for name in release['files'] if name.endswith('.whl')]
     if len(wheels) != 1 or wheels[0] != f'ms_agent-{release["version"]}-py3-none-any.whl':
         raise ValueError('Expected the single versioned MS-Agent wheel from this build')
-    return release, directory / wheels[0], int(match[4])
+    return release, directory / wheels[0], int(match[4]) if match else None
 
 
 def upload_wheel(store, directory):
@@ -272,7 +279,8 @@ def upload_wheel(store, directory):
                'sdk_commit': release['sdk_commit'], 'wheel': wheel.name,
                'wheel_sha256': release['files'][wheel.name], 'wheel_url': store.url(relative)}
     store.local_record(release['version'] + '.wheel.json', receipt)
-    print('Development wheel uploaded and anonymous download verified: ' + release['version'])
+    kind = 'Development' if build_id is not None else 'Release'
+    print(f'{kind} wheel uploaded and anonymous download verified: ' + release['version'])
     return receipt
 
 
@@ -285,7 +293,7 @@ def complete_delivery(store, directory, image_record, image_receipt):
                 'image': publish.REGISTRY_IMAGE + ':' + release['version']}
     if any(receipt.get(key) != value for key, value in expected.items()) or not re.fullmatch(
             re.escape(publish.REGISTRY_IMAGE) + r'@sha256:[0-9a-f]{64}', receipt.get('image_digest', '')):
-        raise ValueError('ACR receipt does not match the validated development wheel/image')
+        raise ValueError('ACR receipt does not match the validated wheel/image')
     # Recheck wheel access before making a matching pair discoverable.
     record = dict(upload_wheel(store, directory), image=receipt['image'],
                   image_digest=receipt['image_digest'], image_id=image['image_id'])
@@ -294,6 +302,11 @@ def complete_delivery(store, directory, image_record, image_receipt):
             file = Path(temporary) / 'manifest.json'
             file.write_text(json.dumps(record, indent=2) + '\n')
             store.ensure_object(f'builds/{release["version"]}/manifest.json', file)
+            if build_id is None:
+                # Release consumers select by version; the dev channel stays dev-only.
+                store.local_record(release['version'] + '.json', record)
+                print('Matching release wheel/image delivery completed: ' + release['version'])
+                return
             current = store.read_json('channels/dev/latest.json')
             if current:
                 version = DEVELOPMENT.fullmatch(str(current.get('version', '')))

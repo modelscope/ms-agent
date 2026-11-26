@@ -16,7 +16,7 @@ on:
         type: string
         default: ''
       publish_wheel:
-        description: 'Deliver the matching development wheel through runner-local OSS configuration'
+        description: 'Deliver the matching development or release wheel through runner-local OSS configuration'
         type: boolean
         default: false
 
@@ -140,10 +140,10 @@ jobs:
           if tag not in ('', release['version'], 'dev-' + release['sdk_commit'][:12]):
               raise ValueError('Invalid image tag')
           if os.environ['PUBLISH_WHEEL'] == 'true' and (
-              not re.fullmatch(r'\d+\.\d+\.\d+\.dev[1-9]\d*', release['version'])
+              not re.fullmatch(r'\d+\.\d+\.\d+(?:\.dev[1-9]\d*|rc\d+)?', release['version'])
               or tag != release['version']
           ):
-              raise ValueError('Business delivery requires a matching development wheel/image version')
+              raise ValueError('Business delivery requires a matching development or release wheel/image version')
           with open(os.environ['GITHUB_ENV'], 'a') as output:
               output.write('SDK_VERSION=' + release['version'] + '\n')
               output.write('WHEEL_SHA256=' + wheel_sha + '\n')
@@ -192,7 +192,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
-      - name: Upload and verify the matching development wheel
+      - name: Upload and verify the matching wheel
         if: inputs.operation == 'publish' && inputs.publish_wheel
         run: |
           "$PYTHON_BIN" .dev_scripts/webui/oss_distribution.py upload --inputs "$IMAGE_JOB_DIR/inputs"

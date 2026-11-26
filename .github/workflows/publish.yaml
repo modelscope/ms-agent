@@ -54,3 +54,5 @@ jobs:
     with:
       operation: publish
       image_tag: ${{ needs.build.outputs.version }}
+      # Business consumers install the same wheel from OSS; PyPI mirrors lag behind.
+      publish_wheel: true

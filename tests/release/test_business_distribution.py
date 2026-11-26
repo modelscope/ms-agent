@@ -100,10 +100,10 @@ class MemoryStore(delivery.OssStore):
         assert hashlib.sha256(self.objects[relative]).hexdigest() == expected
 
 
-def release_files(root, build=123, payload=b'verified wheel'):
-    directory = root / str(build)
+def release_files(root, build=123, payload=b'verified wheel', version=None):
+    version = version or '1.7.0.dev' + str(build)
+    directory = root / version
     directory.mkdir(exist_ok=True)
-    version = '1.7.0.dev' + str(build)
     wheel = f'ms_agent-{version}-py3-none-any.whl'
     files = {wheel: payload, f'ms_agent-{version}.tar.gz': b'sdist',
              'runtime-requirements.txt': b'locked dependencies'}
@@ -170,6 +170,34 @@ def test_retry_of_older_build_does_not_roll_back_latest(tmp_path):
     delivery.complete_delivery(store, *older)
     assert store.read_json('channels/dev/latest.json')['build_id'] == 124
     assert json.loads((tmp_path / 'latest.json').read_text())['build_id'] == 124
+
+
+@pytest.mark.parametrize('version', ['1.7.0', '1.8.0rc1'])
+def test_release_wheel_is_delivered_without_touching_dev_channel(tmp_path, version):
+    store = MemoryStore(tmp_path)
+    dev = release_files(tmp_path, 124)
+    delivery.complete_delivery(store, *dev)
+    latest = store.objects['channels/dev/latest.json']
+    directory, record, receipt = release_files(tmp_path, version=version)
+    wheel = f'builds/{version}/ms_agent-{version}-py3-none-any.whl'
+    assert delivery.upload_wheel(store, directory)['build_id'] is None
+    assert store.acls[wheel] == 'public-read'
+    delivery.complete_delivery(store, directory, record, receipt)
+    delivery.complete_delivery(store, directory, record, receipt)
+    assert store.puts.count(wheel) == 1
+    assert store.acls[f'builds/{version}/manifest.json'] == 'private'
+    assert store.objects['channels/dev/latest.json'] == latest
+    assert json.loads((tmp_path / 'latest.json').read_text())['build_id'] == 124
+    assert json.loads((tmp_path / f'{version}.json').read_text())['version'] == version
+
+
+@pytest.mark.parametrize('version', ['1.7', '1.7.0.post1', '1.7.0a1', '01.7.0'])
+def test_unrecognized_versions_are_not_delivered(tmp_path, version):
+    store = MemoryStore(tmp_path)
+    directory, *_ = release_files(tmp_path, version=version)
+    with pytest.raises(ValueError, match='development or release build'):
+        delivery.upload_wheel(store, directory)
+    assert not store.puts
 
 
 def test_receipt_for_another_wheel_is_rejected_before_upload(tmp_path):
@@ -329,6 +357,10 @@ def test_workflow_business_delivery_is_opt_in_and_follows_image_publication():
     assert upload < image < complete
     assert 'inputs.publish_wheel' in steps[upload]['if']
     assert 'inputs.publish_wheel' in steps[complete]['if']
+    release = load('publish.yaml')['jobs']['publish-image']
+    assert release['needs'] == ['build', 'publish-pypi']
+    assert release['with']['publish_wheel'] == 'true'
+    assert release['with']['image_tag'] == '${{ needs.build.outputs.version }}'
 
 
 @pytest.mark.parametrize('value', [None, '', 'relative/config'])

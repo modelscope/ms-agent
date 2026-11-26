@@ -84,7 +84,7 @@ package contents are controlled separately by the build rules.
 | `webui_smoke.py` | Shared HTTP checks used by package and image validation |
 | `publish_webui_release.py` | Publish already validated artifacts and reject conflicting existing versions |
 | `development_version.py` | Assign a development version in an isolated package source without changing the working checkout |
-| `oss_distribution.py` | Deliver a verified development wheel and record its matching published image using runner-local settings |
+| `oss_distribution.py` | Deliver a verified development or release wheel and record its matching published image using runner-local settings |
 
 The installed-package check needs the Python interpreter from a fresh wheel
 environment. Run it from outside the checkout, passing its absolute script path
@@ -111,7 +111,8 @@ so the wheel metadata and installed SDK report the same version.
 In the image workflow, `push_dev=false` builds and checks the package and image.
 Selecting `push_dev=true` also delivers the wheel and publishes the matching image
 under the same development version. Release tags keep the existing release/RC
-flow, and the PyPI publisher rejects development versions.
+flow, and the PyPI publisher rejects development versions. After PyPI publication,
+release tags also deliver the same wheel to OSS before publishing the image.
 
 Business delivery uses an installed `ossutil` and the encrypted `ms-agent` profile
 in runner-local `credentials.ini`, with a `destination.json` containing the target
@@ -129,8 +130,8 @@ temporary object is then removed. Credentials need object upload, download, ACL,
 multipart upload and staging-object deletion permissions within the target prefix.
 
 The delivery helper checks uploaded bytes and anonymous downloads before recording
-success. A versioned delivery manifest and `channels/dev/latest.json` are written
-after the matching image is published. Older retries cannot replace a newer latest
+success. A versioned delivery manifest and, for development builds only,
+`channels/dev/latest.json` are written after the matching image is published. Older retries cannot replace a newer latest
 record. Download URLs are recorded in the runner-local `deliveries/` directory;
 they are not printed in workflow logs or included in workflow artifacts.
 
