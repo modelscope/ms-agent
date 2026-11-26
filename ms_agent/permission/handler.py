@@ -74,6 +74,11 @@ class AutoPermissionHandler:
         return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
 
 
+# A confirmation is only as good as the key that answers it. Unrecognized
+# answers are re-prompted this many times before the prompt denies by default.
+_MAX_CONFIRM_ATTEMPTS = 3
+
+
 class CLIPermissionHandler:
     """Interactive CLI permission prompt."""
 
@@ -107,42 +112,64 @@ class CLIPermissionHandler:
         print(f'{"="*60}', file=sys.stderr)
 
         loop = asyncio.get_running_loop()
-        choice = await loop.run_in_executor(
-            None, lambda: input('Choice [y/s/a/e/n]: ').strip().lower())
+        deny = PermissionResponse(action=PermissionAction.DENY)
 
-        if choice == 's':
+        # Only an explicit key is an answer. An empty Enter, a typo, or a
+        # closed stdin is not consent, so retry a bounded number of times and
+        # otherwise fall through to a denial rather than an accidental allow.
+        for _ in range(_MAX_CONFIRM_ATTEMPTS):
+            try:
+                choice = await loop.run_in_executor(
+                    None,
+                    lambda: input('Choice [y/s/a/e/n]: ').strip().lower(),
+                )
+            except (EOFError, KeyboardInterrupt):
+                return deny
+            if choice in ('y', 's', 'a', 'e', 'n'):
+                break
+            print('Invalid choice, please try again.', file=sys.stderr)
+        else:
+            return deny
+
+        if choice == 'y':
+            return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
+        elif choice == 's':
             return PermissionResponse(
                 action=PermissionAction.ALLOW_SESSION,
                 pattern=suggestion,
             )
         elif choice == 'a':
-            edited = await loop.run_in_executor(
-                None,
-                lambda: input(f'Pattern [{suggestion}]: ').strip(),
-            )
+            try:
+                edited = await loop.run_in_executor(
+                    None,
+                    lambda: input(f'Pattern [{suggestion}]: ').strip(),
+                )
+            except (EOFError, KeyboardInterrupt):
+                return deny
             final_pattern = edited if edited else suggestion
             return PermissionResponse(
                 action=PermissionAction.ALLOW_ALWAYS,
                 pattern=final_pattern,
             )
         elif choice == 'e':
-            edited_raw = await loop.run_in_executor(
-                None,
-                lambda: input('New args (JSON): ').strip(),
-            )
+            try:
+                edited_raw = await loop.run_in_executor(
+                    None,
+                    lambda: input('New args (JSON): ').strip(),
+                )
+            except (EOFError, KeyboardInterrupt):
+                return deny
             try:
                 new_args = json.loads(edited_raw)
             except json.JSONDecodeError:
                 print('Invalid JSON, denying.', file=sys.stderr)
-                return PermissionResponse(action=PermissionAction.DENY)
+                return deny
             return PermissionResponse(
                 action=PermissionAction.MODIFY,
                 updated_args=new_args,
             )
-        elif choice == 'n':
-            return PermissionResponse(action=PermissionAction.DENY)
-        else:
-            return PermissionResponse(action=PermissionAction.ALLOW_ONCE)
+        else:  # 'n' — the only explicit refusal.
+            return deny
 
 
 class EventEmitter(Protocol):
