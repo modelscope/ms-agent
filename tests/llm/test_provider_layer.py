@@ -18,7 +18,7 @@ from modelscope.utils.test_utils import test_level
 
 EXPECTED_PROVIDERS = {
     'openai', 'anthropic', 'google', 'modelscope', 'zhipu', 'deepseek',
-    'dashscope', 'minimax', 'openrouter', 'kimi'
+    'dashscope', 'minimax', 'openrouter', 'kimi', 'cheaperinference'
 }
 
 
