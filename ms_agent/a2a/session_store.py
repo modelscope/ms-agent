@@ -71,16 +71,18 @@ class A2AAgentStore:
 
     async def get_or_create(self, task_id: str) -> A2ATaskEntry:
         """Return an existing task entry or create a new one."""
-        if task_id in self._tasks:
-            entry = self._tasks[task_id]
-            entry.touch()
-            return entry
-
-        if len(self._tasks) >= self.max_tasks:
+        while True:
+            if task_id in self._tasks:
+                entry = self._tasks[task_id]
+                entry.touch()
+                return entry
+            if len(self._tasks) < self.max_tasks:
+                break
             evicted_id = self._evict_lru()
             if evicted_id is None:
                 raise MaxTasksError(self.max_tasks)
             await self._cleanup_entry(evicted_id)
+            # Cleanup yields, so recheck task identity and available capacity.
 
         if not self.config_path or not os.path.exists(self.config_path):
             raise ConfigError(f'Config not found: {self.config_path}')
