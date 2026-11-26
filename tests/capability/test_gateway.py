@@ -2,7 +2,7 @@
 """Capability Gateway tests — registry, --check, MCP list_tools, real tools.
 
 Heavy / long-running project capabilities are not exercised end-to-end here.
-Keyed engines (exa/tavily) are skipped when the corresponding env var is absent.
+Keyed engines (exa/tavily/outcrawl) are skipped when the corresponding env var is absent.
 """
 from __future__ import annotations
 
@@ -197,6 +197,21 @@ class TestWebSearchCapability(unittest.TestCase):
         result = asyncio.run(_run())
         self.assertIn('error', result)
         self.assertIn('TAVILY_API_KEY', result['error'])
+
+    def test_outcrawl_missing_key_actionable(self):
+        if os.environ.get('OUTCRAWL_API_KEY'):
+            self.skipTest('OUTCRAWL_API_KEY is set')
+        registry = create_registry()
+
+        async def _run():
+            return await registry.invoke(
+                'web_search',
+                {'query': 'test', 'engine_type': 'outcrawl', 'num_results': 1},
+            )
+
+        result = asyncio.run(_run())
+        self.assertIn('error', result)
+        self.assertIn('OUTCRAWL_API_KEY', result['error'])
 
 
 @pytest.mark.asyncio

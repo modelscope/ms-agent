@@ -162,6 +162,7 @@ Since all loads are `override=False`, the **effective priority** (highest to low
 | `EXA_API_KEY`         | web_search (exa engine)                          | Only needed for `engine_type='exa'`                  |
 | `SERPAPI_API_KEY`     | web_search (serpapi / google / bing / baidu)     | Only needed for SerpAPI-backed engines               |
 | `TAVILY_API_KEY`      | web_search (tavily engine)                       | Only needed for `engine_type='tavily'`               |
+| `OUTCRAWL_API_KEY`    | web_search (outcrawl engine)                     | Only needed for `engine_type='outcrawl'`             |
 | `MS_AGENT_OUTPUT_DIR` | replace_file_*, lsp_check_*                      | Workspace root for file operations (defaults to cwd) |
 
 

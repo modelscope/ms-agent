@@ -24,6 +24,7 @@ _ENGINE_ENV_REQUIREMENTS: dict[str, list[str]] = {
     'bing': ['SERPAPI_API_KEY'],
     'baidu': ['SERPAPI_API_KEY'],
     'tavily': ['TAVILY_API_KEY'],
+    'outcrawl': ['OUTCRAWL_API_KEY'],
 }
 
 
@@ -50,14 +51,16 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
     granularity='tool',
     summary=(
         'Search the web using multiple engines '
-        '(arxiv / exa / serpapi / tavily, plus google/bing/baidu aliases) '
+        '(arxiv / exa / serpapi / tavily / outcrawl, plus google/bing/baidu '
+        'aliases) '
         'and optionally fetch full page content.'),
     description=(
         'Performs a web search and returns structured results including '
         'title, URL, and summary for each hit.  Supported engines: '
         'arxiv (default, no key), exa (EXA_API_KEY or EXA_API_KEYS), '
         'serpapi / serp / '
-        'google / bing / baidu (SERPAPI_API_KEY), tavily (TAVILY_API_KEY). '
+        'google / bing / baidu (SERPAPI_API_KEY), tavily (TAVILY_API_KEY), '
+        'outcrawl (OUTCRAWL_API_KEY). '
         'Set fetch_content=true to additionally retrieve and return page '
         'text (truncated to 10 000 chars).'),
     input_schema={
@@ -77,7 +80,8 @@ WEB_SEARCH_DESCRIPTOR = CapabilityDescriptor(
                 'string',
                 'description':
                 ("Search engine: 'arxiv' (default, no key), 'exa', "
-                 "'serpapi'/'serp'/'google'/'bing'/'baidu', or 'tavily'"),
+                 "'serpapi'/'serp'/'google'/'bing'/'baidu', 'tavily' or "
+                 "'outcrawl'"),
                 'default':
                 'arxiv',
             },
