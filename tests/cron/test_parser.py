@@ -1,4 +1,6 @@
 """Tests for ms_agent.cron.parser."""
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from ms_agent.cron.parser import parse_schedule, compute_next_run, advance_next_run
@@ -93,6 +95,16 @@ class TestParseScheduleErrors:
 
 
 class TestComputeNextRun:
+    @pytest.mark.parametrize('offset_hours', [8, -5, 0, None])
+    def test_interval_converts_base_time_to_utc(self, offset_hours):
+        tz = timezone(timedelta(hours=offset_hours)) if offset_hours is not None else None
+        base = datetime(2099, 1, 1, 9, tzinfo=tz)
+        sched = CronSchedule(kind='interval', interval_seconds=3600)
+        result = compute_next_run(sched, base)
+        expected = (base if tz else base.replace(tzinfo=timezone.utc)) + timedelta(hours=1)
+        assert datetime.fromisoformat(result) == expected
+        assert result.endswith('+00:00')
+
     def test_interval_returns_future(self):
         sched = CronSchedule(kind='interval', interval_seconds=60)
         result = compute_next_run(sched)
@@ -111,6 +123,26 @@ class TestComputeNextRun:
 
 
 class TestAdvanceNextRun:
+    def test_overdue_interval_keeps_utc_cadence(self, monkeypatch):
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 9, 30, 2, 15, tzinfo=timezone.utc)
+
+        monkeypatch.setattr('ms_agent.cron.parser.datetime', FixedDatetime)
+        sched = CronSchedule(kind='interval', interval_seconds=3600)
+        assert advance_next_run(sched, '2026-09-30T09:00:00+08:00') == (
+            '2026-09-30T03:00:00+00:00')
+
+    @pytest.mark.parametrize('offset_hours', [8, -5, 0])
+    def test_interval_preserves_offset_timestamp_instant(self, offset_hours):
+        base = datetime(2099, 1, 1, 9, tzinfo=timezone(
+            timedelta(hours=offset_hours)))
+        sched = CronSchedule(kind='interval', interval_seconds=3600)
+        result = advance_next_run(sched, base.isoformat())
+        assert datetime.fromisoformat(result) == base + timedelta(hours=1)
+        assert result.endswith('+00:00')
+
     def test_once_returns_none(self):
         sched = CronSchedule(kind='once', run_at='2025-01-01T00:00:00')
         assert advance_next_run(sched, '2025-01-01T00:00:00') is None
