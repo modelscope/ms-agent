@@ -483,8 +483,14 @@ class MemoryOrchestrator(Memory):
         tool_name: str,
         arguments: Dict[str, Any],
     ) -> str:
-        backend = await self._ensure_started()
-        return await backend.handle_tool_call(tool_name, arguments)
+        if self._closed:
+            return json.dumps({'error': 'memory is closed'})
+        async with _store_lock(self.mem_config.base_dir):
+            # close() may retire this instance while the tool waits its turn.
+            if self._closed:
+                return json.dumps({'error': 'memory is closed'})
+            backend = await self._ensure_started()
+            return await backend.handle_tool_call(tool_name, arguments)
 
     # ------------------------------------------------------------------
     # Cache
@@ -534,10 +540,11 @@ class MemoryOrchestrator(Memory):
         await self.flush_pending()
         if retire:
             self._closed = True
-        if self._backend is not None and self._started:
-            async with _store_lock(self.mem_config.base_dir):
+        async with _store_lock(self.mem_config.base_dir):
+            # A store operation may still be awaiting backend.start().
+            if self._backend is not None and self._started:
                 await self._backend.close()
-            self._started = False
+                self._started = False
 
     async def close(self) -> None:
         await self._shutdown_backend(retire=True)
