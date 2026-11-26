@@ -1,6 +1,7 @@
 # flake8: noqa
 # isort: skip_file
 # yapf: disable
+import hashlib
 import os
 import re
 import shutil
@@ -127,6 +128,8 @@ class MarkdownConverter:
         resources_dir = folder_path / 'resources'
 
         for img_path, alt_text in images:
+            if img_path in image_mapping:
+                continue
             # Handle relative paths
             if not os.path.isabs(img_path):
                 # First try resources folder, then folder_path
@@ -137,11 +140,15 @@ class MarkdownConverter:
                 source_path = Path(img_path)
 
             if source_path.exists():
-                # Generate new filename
-                new_filename = f'{len(image_mapping)}_{source_path.name}'
-                new_path = output_images_dir / new_filename
-
                 try:
+                    # A folder export shares this directory across documents.
+                    # Per-document counters can overwrite another report's images.
+                    digest = hashlib.sha256()
+                    with source_path.open('rb') as source:
+                        for chunk in iter(lambda: source.read(65536), b''):
+                            digest.update(chunk)
+                    new_filename = f'{digest.hexdigest()}{source_path.suffix}'
+                    new_path = output_images_dir / new_filename
                     # Copy and possibly compress image
                     if source_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
                         with Image.open(source_path) as img:
