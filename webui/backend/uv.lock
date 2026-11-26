@@ -1609,7 +1609,7 @@ wheels = [
 
 [[package]]
 name = "ms-agent"
-version = "1.7.0rc0"
+version = "1.7.0"
 source = { editable = "../../" }
 dependencies = [
     { name = "aiohttp" },
