@@ -8,8 +8,9 @@ Check environment, services, model, tools, then state. Change one condition at a
 | --- | --- |
 | ms-agent not found | Activate the Python environment used for installation |
 | Node/pnpm missing | Load nvm in the new shell; verify Node 22.22.0+ and pnpm 10.17.1 |
-| Slow first launch | Inspect dependency/build progress before testing readiness |
-| Missing page/CSS | Use normal `ms-agent ui` / `pnpm build`; do not bypass stylesheet generation |
+| Missing WebUI Python dependencies | For PyPI installations, run `python -m pip install -U "ms-agent[webui]"` in the active environment. Source installations use uv to prepare the backend when running `ms-agent ui` |
+| Slow first launch | PyPI installations download Node dependencies; source installations also prepare the backend and build the frontend. Wait for the ready URL |
+| Missing page/CSS | Reinstall the matching PyPI package if bundled resources are invalid. For source installations, run `ms-agent ui` or `pnpm build` in `webui/frontend/` to rebuild |
 | Port busy | Select a free port instead of killing unrelated processes |
 
 ## Models and streaming

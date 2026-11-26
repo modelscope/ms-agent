@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-以下从源码安装并启动 WebUI。
+以下从 PyPI 安装 MS-Agent 1.7.0 并启动 WebUI。参与开发请看[从源码运行与开发](#从源码运行与开发)。
 
 ### 1. 准备环境
 
@@ -19,19 +19,15 @@
 | [Python](https://www.python.org/downloads/) | 3.12 或更高版本 | 运行 MS-Agent 和 WebUI 后端 |
 | [Node.js](https://nodejs.org/en/download) | 22.22.0 或更高版本 | 运行 WebUI 前端服务 |
 | pnpm | 10.17.1 | 安装前端依赖 |
-| [uv](https://docs.astral.sh/uv/) | 0.5 或更高版本 | 准备独立的后端 Python 环境 |
-| Git | 当前可用版本 | 克隆源码 |
 
 <a id="首次配置"></a>
 
 #### 首次配置
 
-完整的环境安装与首次使用见[文档快速开始](../docs/zh/get-started/quick-start.md)，包括使用 uv 准备 Python、使用 nvm 安装 Node.js，以及 Windows 环境激活方式。下方保留已有 Python/Node.js 时可独立执行的启动流程。
+Python、Node.js 的安装方法及 Windows 环境激活方式见[文档快速开始](../docs/zh/get-started/quick-start.md)。已有环境时，可直接按下方步骤继续。
 
 <a id="安装-nodejs"></a>
 <a id="安装-python"></a>
-
-首次安装 Python 或 Node.js，请先完成快速开始中的“准备 Python 环境”及其环境安装折叠项，再回到这里。
 
 #### 检查并激活环境
 
@@ -51,23 +47,16 @@ source ms-agent-env/bin/activate
 
 已有虚拟环境或 Conda 环境的用户直接激活即可；如果已按快速开始创建并激活环境，无需重复操作。Windows PowerShell 使用 `python -m venv ms-agent-env` 和 `.\ms-agent-env\Scripts\Activate.ps1`。后续命令都在已激活的环境中运行。
 
-安装 uv，并确认当前终端能找到它：
+<a id="2-克隆源码安装并启动"></a>
+
+### 2. 安装并启动
 
 ```bash
-pip install uv
-uv --version
-```
-
-### 2. 克隆源码、安装并启动
-
-```bash
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-pip install -e .
+python -m pip install -U "ms-agent[webui]"
 ms-agent ui
 ```
 
-可编辑安装让 `ms-agent` 命令使用这个仓库中的 SDK。首次启动会通过 uv 在 `webui/backend/.venv` 中准备后端及其依赖，在 `webui/frontend/` 安装前端依赖并构建页面和样式；无需手动安装 `ms-agent[webui]`。请保持网络连接，并等待终端显示就绪地址。后续启动会检查依赖与构建状态，复用有效的构建结果。
+`[webui]` 扩展会将后端依赖安装到当前 Python 环境。安装包已包含构建好的前端，首次启动仍需联网下载 Node 依赖并存入本地缓存，请等待终端显示访问地址。后续启动会复用有效的依赖缓存。
 
 浏览器会自动打开 WebUI，通常是 **http://127.0.0.1:8000**。如果端口被占用，会选择后续可用端口，以终端打印的地址为准。按 **Ctrl-C** 停止服务。
 
@@ -83,15 +72,16 @@ ms-agent ui
 
 ### 4. 下次启动
 
-重新打开终端时，先激活上面创建的环境，再启动服务。假设环境和仓库保存在同一目录：
+重新打开终端后，切到创建 Python 环境的目录，激活环境并启动服务：
 
 ```bash
 source ms-agent-env/bin/activate
-cd ms-agent
 ms-agent ui
 ```
 
-请先切换到实际存放它们的目录。模型配置和会话会保留，无需重复填写 API Key。如果通过 nvm 安装 Node.js，确认新终端能运行 `node --version`；找不到命令时，先执行 `source "$HOME/.nvm/nvm.sh"`。
+模型配置和会话会保留，无需重复填写 API Key。如果通过 nvm 安装 Node.js，确认新终端能运行 `node --version`；找不到命令时，先执行 `source "$HOME/.nvm/nvm.sh"`。
+
+升级时先停止服务，在同一环境中执行 `python -m pip install -U "ms-agent[webui]"`，再重新启动。
 
 完整操作指引见 [WebUI 教程](../docs/zh/user-guide/webui.md)、[模型设置](../docs/zh/user-guide/model-settings.md)和[技能与 MCP](../docs/zh/user-guide/skills-mcp.md)。若请求失败，见[故障排查](../docs/zh/user-guide/troubleshooting.md)。
 
@@ -206,12 +196,12 @@ ms-agent ui --host 0.0.0.0 --port 8000
 
 ## 可选登录认证
 
-MS-Agent 是面向本地使用的 Agent 框架。WebUI 默认监听 `127.0.0.1`，打开后直接进入对话。需要登录保护时，在启动前设置以下环境变量，也可以写入 `webui/backend/.env`：
+MS-Agent 是面向本地使用的 Agent 框架。WebUI 默认监听 `127.0.0.1`，打开后直接进入对话。需要登录保护时，在启动前设置以下环境变量；源码安装也可将这些变量写入 `webui/backend/.env`：
 
-```dotenv
-MS_AGENT_WEBUI_AUTH_ENABLED=true
-MS_AGENT_WEBUI_USERNAME=admin
-MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
+```bash
+export MS_AGENT_WEBUI_AUTH_ENABLED=true
+export MS_AGENT_WEBUI_USERNAME=admin
+export MS_AGENT_WEBUI_PASSWORD='请替换为足够长且不重复使用的密码'
 ```
 
 重新启动 `ms-agent ui` 后，使用配置的用户名和密码登录。每个实例只有一个账号，无需注册。用户名默认为 `admin`；开启认证却未设置密码时，服务会拒绝启动。登录状态保留 7 天，重启服务后仍然有效。使用共享浏览器时，可在**设置 → 退出登录**中退出。修改用户名或密码并重启后，原有登录状态失效；忘记密码时也可通过这种方式重设。
@@ -224,17 +214,27 @@ MS_AGENT_WEBUI_PASSWORD=请替换为足够长且不重复使用的密码
 
 模型、工具和记忆通常可以直接在界面的设置中配置。也可通过环境变量提供配置，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`，以及首次启动时的 `MS_AGENT_LLM_PROVIDER`、`MS_AGENT_LLM_MODEL` 默认值。
 
-项目配置、会话和托管技能默认保存在 `~/.ms_agent`；可以通过 `MS_AGENT_HOME` 指定其他目录。项目工作目录中的文件保存在原位置。源码安装的后端环境位于 `webui/backend/.venv`，前端依赖和构建结果位于 `webui/frontend/`，与项目数据分开。
+项目配置、会话和托管技能默认保存在 `~/.ms_agent`，可通过 `MS_AGENT_HOME` 指定其他目录；项目工作目录中的文件保存在原位置。PyPI 安装使用当前 Python 环境，前端依赖保存在用户缓存中，可用 `MS_AGENT_WEBUI_CACHE` 更改缓存目录。源码安装的后端环境位于 `webui/backend/.venv`，前端依赖和构建结果位于 `webui/frontend/`，与项目数据分开。
 
 保存的模型和搜索 API Key 会加密。主密钥默认位于规范化后的 `${MS_AGENT_HOME}.secrets/master.key`，通常是 `~/.ms_agent.secrets/master.key`，与应用数据目录分开。升级或搬迁自己的服务时应保留主密钥；分享模板时应排除它。共享配置的 WebUI、TUI、CLI 和 SDK 应一起升级，旧版不能读取新密文。迁移、外部密钥文件与恢复方法见[密钥保存与恢复](../docs/zh/user-guide/credentials.md)，扩展接口见[凭据存储设计](../docs/zh/development/credential-storage.md)。
 
-按本指南从可编辑源码运行时，WebUI 读取已保存的 SDK 设置，并依次加载仓库根目录、`webui/`、`webui/backend/` 下的 `.env`，后者优先，已设置的进程环境变量优先级最高。可参考 [配置示例](backend/.env.example)。
+PyPI 安装读取已保存的 SDK 设置和进程环境变量，不会加载当前目录或安装目录中的 `.env`。可编辑源码安装还会依次加载仓库根目录、`webui/`、`webui/backend/` 下的 `.env`，后者优先；进程环境变量的优先级始终最高。可参考[配置示例](backend/.env.example)。
 
-本地向量记忆需要额外安装 `fastembed`，首次使用时会下载嵌入模型。在 `webui/backend/` 执行 `uv sync --locked --extra local-embed` 将其安装到后端环境。其他模型和搜索服务按各自配置使用，不必为普通对话安装本地嵌入模型。
+本地向量记忆需要额外安装 `fastembed`，首次使用时会下载嵌入模型。PyPI 用户在 WebUI 所用环境中执行 `python -m pip install fastembed`；源码开发者在 `webui/backend/` 执行 `uv sync --locked --extra local-embed`。普通对话无需安装本地嵌入模型，其他模型和搜索服务按各自配置使用。
 
 ## 从源码运行与开发
 
-完成上方快速开始后，即可在同一份源码中开发。修改源码后，重新运行 `ms-agent ui` 会检查并更新过期的前端构建。
+开发时建议使用独立的 Python 环境。除上方列出的 Python、Node.js 和 pnpm 外，还需准备 Git 和 uv 0.5+：
+
+```bash
+git clone https://github.com/modelscope/ms-agent.git
+cd ms-agent
+python -m pip install "uv>=0.5"
+python -m pip install -e .
+ms-agent ui
+```
+
+可编辑安装会使用当前仓库中的 SDK。首次启动会在 `webui/backend/.venv` 中准备后端环境，安装前端依赖并构建前端，无需另装 `[webui]` 扩展。修改源码后，再次运行 `ms-agent ui` 会检查并更新过期的前端构建。
 
 需要热更新时，在仓库根目录打开两个终端：
 
@@ -334,12 +334,12 @@ default = true
 
 | 现象 | 处理方式 |
 | --- | --- |
-| 找不到 `ms-agent`、`uv`、`node` 或 `pnpm` | 确认工具已安装，Python 环境已激活，且当前终端可以访问相应命令；安装后可重新打开终端 |
+| 找不到 `ms-agent`、`node` 或 `pnpm` | 确认工具已安装、Python 环境已激活，且当前终端能运行相应命令；源码启动还需检查 uv |
 | `python` / `pip` 不存在，或出现 `externally-managed-environment` | 先按环境准备章节创建并激活虚拟环境；不要向系统 Python 安装。激活后检查 `python --version` 与 `pip --version` |
-| `npm install --global` 提示 `EACCES` | 使用上面的 nvm 安装方式，将 Node.js 和 pnpm 安装到用户目录 |
+| `npm install --global` 提示 `EACCES` | 按[快速开始](../docs/zh/get-started/quick-start.md#准备-python-环境)中的 nvm 安装方法，将 Node.js 和 pnpm 安装到用户目录 |
 | Python 或 Node 版本不满足要求 | 使用上方列出的版本，确认终端中实际使用的解释器 |
 | 指定端口被占用 | 更换 `--port`，或省略它让启动器自动选择 |
-| 页面或样式缺失 | 重新运行 `ms-agent ui`，让启动器校验并构建前端；若构建失败，按终端错误检查 Node.js、pnpm 和网络 |
+| 页面或样式缺失 | PyPI 安装若提示包内资源无效，请重新安装对应版本；源码安装可重新运行 `ms-agent ui` 构建前端，并按报错检查 Node.js、pnpm 或网络 |
 | 默认项目记录丢失 | 在 WebUI 恢复页面选择“暂不恢复”，或点击“恢复默认项目”并确认。系统先备份默认项目目录，再重建记录；已有会话和全局配置保留，项目设置恢复为默认值 |
 | 模型连接或认证失败 | 检查模型设置中的 API Key、接口地址、模型名称及网络连接 |
-| 缺少 WebUI 的 Python 依赖 | 确认 uv 可用，重新运行 `ms-agent ui` 且不加 `--skip-install`，让启动器同步后端环境 |
+| 缺少 WebUI 的 Python 依赖 | PyPI 用户在当前环境执行 `python -m pip install -U "ms-agent[webui]"`；源码用户确认 uv 可用，再运行不带 `--skip-install` 的 `ms-agent ui` |

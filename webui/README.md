@@ -17,7 +17,7 @@ follow a task and continue the conversation. [中文说明](README_ZH.md)
 
 ## Quick start
 
-Install and start the WebUI from source with the following steps.
+Install MS-Agent 1.7.0 from PyPI and start the WebUI with the following steps. For development, see [Run from source and develop](#run-from-source-and-develop).
 
 ### 1. Prepare the environment
 
@@ -26,19 +26,15 @@ Install and start the WebUI from source with the following steps.
 | [Python](https://www.python.org/downloads/) | 3.12 or newer | SDK and API server |
 | [Node.js](https://nodejs.org/en/download) | 22.22.0 or newer | Frontend server |
 | pnpm | 10.17.1 | Frontend dependencies |
-| [uv](https://docs.astral.sh/uv/) | 0.5 or newer | Separate backend Python environment |
-| Git | A current version | Clone the source |
 
 <a id="first-time-setup"></a>
 
 #### First-time Setup
 
-See the [documentation quick start](../docs/en/get-started/quick-start.md) for complete setup, including Python through uv, Node.js through nvm, and Windows environment activation. The steps below remain a standalone launch guide when Python and Node.js are already available.
+See the [documentation quick start](../docs/en/get-started/quick-start.md) for Python and Node.js installation and Windows environment activation. If your environment is ready, continue below.
 
 <a id="install-nodejs"></a>
 <a id="install-python"></a>
-
-If you need Python or Node.js, complete “Prepare Python” and its environment-setup dropdown in the quick start before continuing.
 
 #### Check and Activate Your Environment
 
@@ -58,29 +54,19 @@ source ms-agent-env/bin/activate
 
 Activate an existing virtual or Conda environment instead if you already have one. If you created and activated an environment in the quick start, you can skip this step. In Windows PowerShell, use `python -m venv ms-agent-env` and `.\ms-agent-env\Scripts\Activate.ps1`. Run all subsequent commands in the activated environment.
 
-Install uv and check that it is available in the current terminal:
+<a id="2-clone-install-and-start"></a>
+
+### 2. Install and start
 
 ```bash
-pip install uv
-uv --version
-```
-
-### 2. Clone, install and start
-
-```bash
-git clone https://github.com/modelscope/ms-agent.git
-cd ms-agent
-pip install -e .
+python -m pip install -U "ms-agent[webui]"
 ms-agent ui
 ```
 
-The editable installation makes `ms-agent` use the SDK in this checkout.
-On first launch, uv prepares the backend and its dependencies in
-`webui/backend/.venv`; the launcher installs frontend dependencies and builds
-the frontend in `webui/frontend/`. There is no need to install
-`ms-agent[webui]` separately. Stay connected to the internet and wait for
-the ready URL in the terminal. Later starts check dependencies and build state,
-reusing valid build output.
+The `[webui]` extra installs the backend dependencies in the active Python
+environment. The package includes the built frontend; first launch installs
+its Node dependencies in a local cache. Stay connected to the internet and
+wait for the ready URL. Later starts reuse valid cached dependencies.
 
 The browser opens automatically, usually at **http://127.0.0.1:8000**. If the
 port is occupied, the launcher selects another available port; use the URL
@@ -98,15 +84,16 @@ Keys and sessions are stored locally under `~/.ms_agent` by default; set `MS_AGE
 
 ### 4. Start Again Later
 
-When you open a new terminal, activate the environment again and start the service. Assuming the environment and repository are in the same parent directory:
+In a new terminal, enter the directory where you created the Python environment, activate it, and start the service:
 
 ```bash
 source ms-agent-env/bin/activate
-cd ms-agent
 ms-agent ui
 ```
 
-First change to the directory where you saved them. Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+Model configuration and sessions persist, so you do not need to enter your API key again. If you installed Node.js through nvm, check `node --version` in the new terminal. If the command is missing, run `source "$HOME/.nvm/nvm.sh"` first.
+
+To upgrade, stop the service and run `python -m pip install -U "ms-agent[webui]"` in the same environment, then start it again.
 
 For further guidance, see the [WebUI guide](../docs/en/user-guide/webui.md), [model settings](../docs/en/user-guide/model-settings.md), and [skills and MCP](../docs/en/user-guide/skills-mcp.md). If a request fails, see [Troubleshooting](../docs/en/user-guide/troubleshooting.md).
 
@@ -290,12 +277,13 @@ an error.
 
 MS-Agent is a framework for local agent work. Its WebUI listens on
 `127.0.0.1` by default and opens directly into chat. To require a login, set
-these variables before starting it (or add them to `webui/backend/.env`):
+these environment variables before starting it. Source installations can also
+load them from `webui/backend/.env`:
 
-```dotenv
-MS_AGENT_WEBUI_AUTH_ENABLED=true
-MS_AGENT_WEBUI_USERNAME=admin
-MS_AGENT_WEBUI_PASSWORD=replace-with-a-long-unique-password
+```bash
+export MS_AGENT_WEBUI_AUTH_ENABLED=true
+export MS_AGENT_WEBUI_USERNAME=admin
+export MS_AGENT_WEBUI_PASSWORD='replace-with-a-long-unique-password'
 ```
 
 Restart `ms-agent ui`, then sign in with that username and password. This is
@@ -324,7 +312,9 @@ variables such as `OPENAI_API_KEY` and `OPENAI_BASE_URL` are also supported;
 
 Project settings, sessions and managed skills are stored in `~/.ms_agent` by
 default. Set `MS_AGENT_HOME` to use another directory. Project workspace files
-remain at their original paths. For source installations, the backend environment
+remain at their original paths. PyPI installations use the active Python
+environment and a user cache for frontend dependencies; `MS_AGENT_WEBUI_CACHE`
+can override the cache directory. For source installations, the backend environment
 lives in `webui/backend/.venv`, while frontend dependencies and build output live
 in `webui/frontend/`, separate from project data.
 
@@ -338,21 +328,35 @@ ciphertext. See
 external key files and recovery after key loss, and
 [credential storage design](../docs/en/development/credential-storage.md) for extension interfaces.
 
-The editable source installation described here reads saved SDK settings and
-loads `.env` files from the repository root, `webui/` and `webui/backend/`, in
-that order. Later files take precedence; process environment variables win over
-all files. See the [configuration example](backend/.env.example).
+PyPI installations read saved SDK settings and process environment variables;
+they do not load `.env` files from the current directory or installed package.
+Editable source installations also load `.env` files from the repository root,
+`webui/` and `webui/backend/`, in that order. Later files take precedence;
+process environment variables win over all files. See the [configuration example](backend/.env.example).
 
 Local vector memory needs the optional `fastembed` package and downloads an
-embedding model on first use. Run `uv sync --locked --extra local-embed` in
-`webui/backend/` to install it into the backend environment. Other model and search services use their own
+embedding model on first use. For a PyPI installation, run `python -m pip install fastembed`
+in the WebUI environment. For source development, run `uv sync --locked --extra local-embed`
+in `webui/backend/`. Other model and search services use their own
 settings; ordinary chat does not require a local embedding model.
 
 ## Run from source and develop
 
-After completing the quick start above, develop in the same checkout.
-Run `ms-agent ui` again after changing source files; it checks and rebuilds stale
-frontend output.
+Use a separate Python environment for development. In addition to Python,
+Node.js and pnpm above, this workflow needs Git and uv 0.5+:
+
+```bash
+git clone https://github.com/modelscope/ms-agent.git
+cd ms-agent
+python -m pip install "uv>=0.5"
+python -m pip install -e .
+ms-agent ui
+```
+
+Editable installation uses the SDK in this checkout. First launch prepares the
+backend in `webui/backend/.venv`, installs frontend dependencies, and builds the
+frontend; the `[webui]` extra is not needed in this workflow. Run `ms-agent ui`
+again after changing source files to rebuild stale frontend output.
 
 For live development, open two terminals at the repository root:
 
@@ -510,12 +514,12 @@ addresses.
 
 | Symptom | What to check |
 | --- | --- |
-| `ms-agent`, `uv`, `node` or `pnpm` is not found | Confirm installation, activate the Python environment and check command availability in the current terminal; reopen the terminal if needed |
+| `ms-agent`, `node` or `pnpm` is not found | Confirm installation, activate the Python environment and check command availability in the current terminal; source startup also needs uv |
 | `python` / `pip` is missing, or `externally-managed-environment` appears | Create and activate a virtual environment as described above; avoid installing into the system Python. Check `python --version` and `pip --version` after activation |
-| `npm install --global` reports `EACCES` | Use the nvm setup above to install Node.js and pnpm in your user directory |
+| `npm install --global` reports `EACCES` | Follow the nvm setup in the [Quick start](../docs/en/get-started/quick-start.md#prepare-python) to install Node.js and pnpm in your user directory |
 | Python or Node version is unsupported | Check the requirements above and which interpreter the terminal uses |
 | An explicit port is occupied | Choose another `--port`, or omit it for automatic selection |
-| Pages or styles are missing | Run `ms-agent ui` again to validate and build the frontend; if the build fails, check Node.js, pnpm and network access as indicated by the error |
+| Pages or styles are missing | For PyPI installations, reinstall the matching package version if bundled resources are invalid. For source installations, run `ms-agent ui` again to rebuild; check the reported Node.js, pnpm or network error |
 | Default project metadata is missing | Open the WebUI recovery page. Choose **Not now** to keep the data as-is, or **Restore default project** and confirm. Recovery backs up the managed project directory before rebuilding its record; existing conversations and global settings are kept, but project settings reset to defaults |
 | Model connection or authentication fails | Check the provider's API key, endpoint, model name and network access |
-| WebUI Python dependencies are missing | Confirm uv is available, then run `ms-agent ui` without `--skip-install` to synchronize the backend environment |
+| WebUI Python dependencies are missing | For PyPI installations, run `python -m pip install -U "ms-agent[webui]"` in the active environment. For source installations, check uv and run `ms-agent ui` without `--skip-install` |

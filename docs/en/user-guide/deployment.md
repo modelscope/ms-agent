@@ -16,12 +16,12 @@ Authentication is off by default for local use. Before exposing the service, ena
 
 ### Optional single-user login
 
-Set these before starting, or keep them in a private `webui/backend/.env`:
+Set these environment variables before starting. Source installations can also load them from a private `webui/backend/.env`; PyPI installations do not load `.env` files automatically:
 
-```ini
-MS_AGENT_WEBUI_AUTH_ENABLED=true
-MS_AGENT_WEBUI_USERNAME=admin
-MS_AGENT_WEBUI_PASSWORD=replace-with-a-long-unique-password
+```bash
+export MS_AGENT_WEBUI_AUTH_ENABLED=true
+export MS_AGENT_WEBUI_USERNAME=admin
+export MS_AGENT_WEBUI_PASSWORD='replace-with-a-long-unique-password'
 ```
 
 Restart and sign in with the configured account. Each instance has one account; the username defaults to `admin`. Enabling authentication without a password prevents startup. Login lasts seven days and survives restarts. Use **Settings → Sign out** to log out; changing the username/password and restarting invalidates old sessions.
