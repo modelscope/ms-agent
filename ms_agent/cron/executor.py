@@ -209,5 +209,17 @@ class JobExecutor:
         job_dir = self._output_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y-%m-%d_%H-%M-%S')
-        out_file = job_dir / f'{ts}.md'
-        out_file.write_text(output, encoding='utf-8')
+        # Keep the original name for the first run in each second. Number
+        # collisions so sorted paths still put the newest output last.
+        slot = 0
+        while True:
+            suffix = f'_{slot:09d}' if slot else ''
+            out_file = job_dir / f'{ts}{suffix}.md'
+            try:
+                stream = out_file.open('x', encoding='utf-8')
+            except FileExistsError:
+                slot += 1
+                continue
+            with stream:
+                stream.write(output)
+            return
