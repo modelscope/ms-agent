@@ -10,6 +10,13 @@ import sys
 from .base import CLICommand
 
 
+def _non_negative_int(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError('must be non-negative')
+    return number
+
+
 def subparser_func(args):
     return CronCMD(args)
 
@@ -88,7 +95,11 @@ class CronCMD(CLICommand):
         # history
         p_hist = sub.add_parser('history', help='Show job run history.')
         p_hist.add_argument('job_id', type=str)
-        p_hist.add_argument('--limit', type=int, default=10)
+        p_hist.add_argument(
+            '--limit',
+            type=_non_negative_int,
+            default=10,
+            help='Maximum number of recent runs to show (0 shows none).')
 
         # output
         p_out = sub.add_parser('output', help='Show job output.')
