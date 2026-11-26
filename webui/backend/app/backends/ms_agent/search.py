@@ -38,13 +38,16 @@ _PROVIDER_META: dict[str, tuple[str, str | None]] = {
     "serpapi": ("SerpAPI", "serpapi_api_key"),
     # Public arXiv API — the SDK builds ArxivSearch() with no arguments.
     "arxiv": ("arXiv", None),
+    # Keyless endpoint by default; a key moves calls to the keyed endpoint.
+    "keenable": ("Keenable Search", "keenable_api_key"),
 }
 
 # Engines that answer without credentials. Tavily serves a keyless tier (SDK:
 # tavily/search.py KEYLESS_HEADER) on a small sliding hourly quota, which is
 # what lets a fresh install search before anything is configured; arxiv needs no
-# credential at all. Everything else genuinely cannot run unconfigured.
-_KEYLESS_CAPABLE = frozenset({"tavily", "arxiv"})
+# credential at all. Keenable serves a keyless endpoint rate limited per IP
+# (SDK: keenable/search.py). Everything else genuinely cannot run unconfigured.
+_KEYLESS_CAPABLE = frozenset({"tavily", "arxiv", "keenable"})
 
 
 def _supports_keyless(provider: str) -> bool:
@@ -53,7 +56,7 @@ def _supports_keyless(provider: str) -> bool:
 # Exa's pre-per-engine field name, still honoured by the SDK for exa only.
 _LEGACY_EXA_FIELDS = ("exa_api_keys", "api_key")
 
-_FALLBACK_ORDER = ("tavily", "exa", "serpapi", "arxiv")
+_FALLBACK_ORDER = ("tavily", "exa", "serpapi", "arxiv", "keenable")
 
 
 def _supported_ids() -> list[str]:
