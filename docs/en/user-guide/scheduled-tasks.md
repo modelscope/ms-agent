@@ -11,6 +11,8 @@ ms-agent cron list --json
 
 `--project` accepts a prepared Agent configuration file or a directory resolving to one; use an explicit `agent.yaml` for the first test. A directory also containing `workflow.yaml` may resolve differently. Configure models/tools for unattended execution; the task timeout is in seconds. Record the job ID and check schedule, enabled state, and time zone. Intervals, one-shot times, and cron expressions are supported; see [Scheduling](../core/scheduling.md).
 
+When running a scheduler with a custom workspace, use the same `--workspace` path in commands such as `ms-agent cron status --workspace /path/to/cron` and `ms-agent cron list --workspace /path/to/cron`. An explicit path overrides `MS_AGENT_CRON_WORKSPACE`. The workspace contains scheduler state and is separate from the Agent configuration selected by `--project`.
+
 ## Run once manually
 
 Replace `JOB_ID` with the returned ID:

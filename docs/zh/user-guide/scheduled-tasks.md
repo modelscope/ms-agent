@@ -11,6 +11,8 @@ ms-agent cron list --json
 
 `--project`可指向已准备的 Agent 配置文件，或能解析出正确 Agent 配置的目录；首次验证推荐明确的 `agent.yaml`。若同一目录还有 `workflow.yaml`，不要假设目录会优先选择 Agent 配置。模型与工具配置需适合无人值守执行，任务超时用秒表示。记录返回的job ID，检查计划、启用状态和时区。支持固定间隔、一次性时间和cron表达式，详细语义见[调度](../core/scheduling.md)。
 
+如果调度进程使用了自定义工作目录，查看状态和任务列表时也传入同一个 `--workspace` 路径，例如 `ms-agent cron status --workspace /path/to/cron` 和 `ms-agent cron list --workspace /path/to/cron`。显式路径优先于 `MS_AGENT_CRON_WORKSPACE`。这个目录保存调度状态，与 `--project` 选择的 Agent 配置不同。
+
 ## 手动运行一次
 
 将下方 `JOB_ID`替换为真实ID：
