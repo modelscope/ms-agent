@@ -29,27 +29,35 @@ class CronCMD(CLICommand):
         sub = parser.add_subparsers(
             dest='cron_action', help='Cron sub-commands')
 
+        def add_action(name: str, *, help: str):
+            action = sub.add_parser(name, help=help)
+            action.add_argument(
+                '--workspace',
+                type=str,
+                default=None,
+                help='Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE).',
+            )
+            return action
+
         # start
-        p_start = sub.add_parser('start', help='Start the cron daemon.')
+        p_start = add_action('start', help='Start the cron daemon.')
         p_start.add_argument(
             '--foreground', action='store_true', help='Run in foreground.')
-        p_start.add_argument(
-            '--workspace', type=str, default=None, help='Cron workspace path.')
         p_start.add_argument(
             '--env', type=str, default=None, help='Path to .env file.')
 
         # stop
-        sub.add_parser('stop', help='Stop the cron daemon.')
+        add_action('stop', help='Stop the cron daemon.')
 
         # status
-        sub.add_parser('status', help='Show scheduler status.')
+        add_action('status', help='Show scheduler status.')
 
         # tick
-        p_tick = sub.add_parser('tick', help='Run a single scheduler tick.')
+        p_tick = add_action('tick', help='Run a single scheduler tick.')
         p_tick.add_argument('--verbose', action='store_true')
 
         # list
-        p_list = sub.add_parser('list', help='List cron jobs.')
+        p_list = add_action('list', help='List cron jobs.')
         p_list.add_argument(
             '--all', action='store_true', help='Include disabled jobs.')
         p_list.add_argument(
@@ -59,7 +67,7 @@ class CronCMD(CLICommand):
             help='JSON output.')
 
         # create
-        p_create = sub.add_parser('create', help='Create a new cron job.')
+        p_create = add_action('create', help='Create a new cron job.')
         p_create.add_argument(
             'schedule', type=str, help='Schedule expression.')
         p_create.add_argument('prompt', type=str, help='Task prompt.')
@@ -70,34 +78,34 @@ class CronCMD(CLICommand):
             '--timeout', type=int, default=None, help='Timeout in seconds.')
 
         # pause
-        p_pause = sub.add_parser('pause', help='Pause a job.')
+        p_pause = add_action('pause', help='Pause a job.')
         p_pause.add_argument('job_id', type=str)
 
         # resume
-        p_resume = sub.add_parser('resume', help='Resume a paused job.')
+        p_resume = add_action('resume', help='Resume a paused job.')
         p_resume.add_argument('job_id', type=str)
 
         # run
-        p_run = sub.add_parser('run', help='Run a job immediately.')
+        p_run = add_action('run', help='Run a job immediately.')
         p_run.add_argument('job_id', type=str)
 
         # remove
-        p_remove = sub.add_parser('remove', help='Remove a job.')
+        p_remove = add_action('remove', help='Remove a job.')
         p_remove.add_argument('job_id', type=str)
 
         # history
-        p_hist = sub.add_parser('history', help='Show job run history.')
+        p_hist = add_action('history', help='Show job run history.')
         p_hist.add_argument('job_id', type=str)
         p_hist.add_argument('--limit', type=int, default=10)
 
         # output
-        p_out = sub.add_parser('output', help='Show job output.')
+        p_out = add_action('output', help='Show job output.')
         p_out.add_argument('job_id', type=str)
         p_out.add_argument(
             '--last', action='store_true', help='Show latest output.')
 
         # import (Phase 2: declarative jobs.d/*.yaml)
-        sub.add_parser(
+        add_action(
             'import', help='Import jobs from jobs.d/*.yaml declarations.')
 
         parser.set_defaults(func=subparser_func)

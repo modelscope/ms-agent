@@ -72,28 +72,34 @@ Choose a subcommand below.
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--foreground` | False | Run in foreground. |
-| `--workspace` | — | Cron workspace path. |
 | `--env` | — | Path to .env file. |
 
 ## `ms-agent cron stop`
 
-No additional arguments.
+| Argument | Default | Description from CLI |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent cron status`
 
-No additional arguments.
+| Argument | Default | Description from CLI |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent cron tick`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--verbose` | False | See command purpose |
 
 ## `ms-agent cron list`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--all` | False | Include disabled jobs. |
 | `--json` | False | JSON output. |
 
@@ -101,6 +107,7 @@ No additional arguments.
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `schedule` | required | Schedule expression. |
 | `prompt` | required | Task prompt. |
 | `--name` |  | Job name. |
@@ -111,30 +118,35 @@ No additional arguments.
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 
 ## `ms-agent cron resume`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 
 ## `ms-agent cron run`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 
 ## `ms-agent cron remove`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 
 ## `ms-agent cron history`
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 | `--limit` | 10 | See command purpose |
 
@@ -142,12 +154,15 @@ No additional arguments.
 
 | Argument | Default | Description from CLI |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | required | See command purpose |
 | `--last` | False | Show latest output. |
 
 ## `ms-agent cron import`
 
-No additional arguments.
+| Argument | Default | Description from CLI |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent agent`
 

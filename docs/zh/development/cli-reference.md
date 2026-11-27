@@ -72,28 +72,34 @@
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--foreground` | False | Run in foreground. |
-| `--workspace` | — | Cron workspace path. |
 | `--env` | — | Path to .env file. |
 
 ## `ms-agent cron stop`
 
-无额外参数。
+| 参数 | 默认值 | 说明（来自CLI定义） |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent cron status`
 
-无额外参数。
+| 参数 | 默认值 | 说明（来自CLI定义） |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent cron tick`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--verbose` | False | 见命令用途 |
 
 ## `ms-agent cron list`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `--all` | False | Include disabled jobs. |
 | `--json` | False | JSON output. |
 
@@ -101,6 +107,7 @@
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `schedule` | 必填 | Schedule expression. |
 | `prompt` | 必填 | Task prompt. |
 | `--name` |  | Job name. |
@@ -111,30 +118,35 @@
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 
 ## `ms-agent cron resume`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 
 ## `ms-agent cron run`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 
 ## `ms-agent cron remove`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 
 ## `ms-agent cron history`
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 | `--limit` | 10 | 见命令用途 |
 
@@ -142,12 +154,15 @@
 
 | 参数 | 默认值 | 说明（来自CLI定义） |
 | --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 | `job_id` | 必填 | 见命令用途 |
 | `--last` | False | Show latest output. |
 
 ## `ms-agent cron import`
 
-无额外参数。
+| 参数 | 默认值 | 说明（来自CLI定义） |
+| --- | --- | --- |
+| `--workspace` | — | Cron workspace path (overrides MS_AGENT_CRON_WORKSPACE). |
 
 ## `ms-agent agent`
 
