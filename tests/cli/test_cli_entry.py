@@ -84,6 +84,36 @@ def test_non_agent_command_keeps_unknown_args(monkeypatch):
     assert dispatched.get('ok')
 
 
+def test_cron_import_accepts_unquoted_yaml_datetime(monkeypatch, capsys,
+                                                  tmp_path):
+    from datetime import datetime, timezone
+
+    from ms_agent.cron.repository import JsonJobRepository
+
+    monkeypatch.setenv('MS_AGENT_CRON_WORKSPACE', str(tmp_path))
+    jobs_dir = tmp_path / 'jobs.d'
+    jobs_dir.mkdir()
+    for name, schedule in [
+        ('01-quoted', '"2099-01-05T09:00:00+08:00"'),
+        ('02-unquoted', '2099-01-05T09:00:00+08:00'),
+        ('03-date-only', '2099-01-05'),
+    ]:
+        (jobs_dir / f'{name}.yaml').write_text(
+            f'schedule: {schedule}\nprompt: {name}\n', encoding='utf-8')
+    monkeypatch.setattr(sys, 'argv', ['ms-agent', 'cron', 'import'])
+
+    run_cmd()
+
+    assert 'Imported 2 job(s)' in capsys.readouterr().out
+    pairs = JsonJobRepository(tmp_path).load_all_with_state()
+    assert [job.id for job, _ in pairs] == ['01-quoted', '02-unquoted']
+    for job, state in pairs:
+        assert job.schedule.kind == 'once'
+        assert state.next_run_at == job.schedule.run_at
+        assert datetime.fromisoformat(state.next_run_at).astimezone(
+            timezone.utc) == datetime(2099, 1, 5, 1, tzinfo=timezone.utc)
+
+
 def test_bare_ms_agent_starts_tui(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['ms-agent'])
     dispatched = {}
