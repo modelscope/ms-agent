@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -170,7 +171,11 @@ class JsonJobRepository:
                 if not isinstance(data, dict):
                     continue
                 from ms_agent.cron.parser import parse_schedule
-                schedule = parse_schedule(data.get('schedule', 'once'))
+                raw_schedule = data.get('schedule', 'once')
+                # PyYAML constructs unquoted timestamps as datetime objects.
+                if isinstance(raw_schedule, datetime):
+                    raw_schedule = raw_schedule.isoformat()
+                schedule = parse_schedule(raw_schedule)
                 spec = CronJobSpec(
                     id=data.get('id', yaml_file.stem),
                     name=data.get('name', yaml_file.stem),
